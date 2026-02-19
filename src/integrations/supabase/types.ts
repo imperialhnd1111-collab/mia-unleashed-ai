@@ -375,6 +375,8 @@ export type Database = {
           avatar_url: string | null
           backstory: string | null
           bio: string | null
+          channel_auto_publish: boolean | null
+          channel_post_interval_hours: number | null
           cover_url: string | null
           created_at: string | null
           current_emotion: Database["public"]["Enums"]["emotion_state"] | null
@@ -384,6 +386,7 @@ export type Database = {
           language: string | null
           name: string
           payment_methods: Json | null
+          payment_methods_config: Json | null
           personality_traits: Json | null
           social_links: Json | null
           stats: Json | null
@@ -404,6 +407,8 @@ export type Database = {
           avatar_url?: string | null
           backstory?: string | null
           bio?: string | null
+          channel_auto_publish?: boolean | null
+          channel_post_interval_hours?: number | null
           cover_url?: string | null
           created_at?: string | null
           current_emotion?: Database["public"]["Enums"]["emotion_state"] | null
@@ -413,6 +418,7 @@ export type Database = {
           language?: string | null
           name: string
           payment_methods?: Json | null
+          payment_methods_config?: Json | null
           personality_traits?: Json | null
           social_links?: Json | null
           stats?: Json | null
@@ -433,6 +439,8 @@ export type Database = {
           avatar_url?: string | null
           backstory?: string | null
           bio?: string | null
+          channel_auto_publish?: boolean | null
+          channel_post_interval_hours?: number | null
           cover_url?: string | null
           created_at?: string | null
           current_emotion?: Database["public"]["Enums"]["emotion_state"] | null
@@ -442,6 +450,7 @@ export type Database = {
           language?: string | null
           name?: string
           payment_methods?: Json | null
+          payment_methods_config?: Json | null
           personality_traits?: Json | null
           social_links?: Json | null
           stats?: Json | null

@@ -32,30 +32,10 @@ async function sendTelegramMessage(botToken: string, chatId: number, text: strin
 }
 
 function humanizeDelay(text: string): number {
-  // Simulate human typing speed (avg 40-60 wpm)
   const words = text.split(" ").length;
-  const baseDelay = Math.min(words * 300, 4000);
-  const jitter = Math.random() * 800;
-  return baseDelay + jitter;
-}
-
-function addHumanErrors(text: string): string {
-  // Occasionally add minor typos or naturalness (10% chance per word)
-  if (Math.random() > 0.15) return text;
-  const corrections = [
-    ["que", "q"],
-    ["porque", "xq"],
-    ["también", "tmb"],
-    ["estoy", "toy"],
-    ["más", "mas"],
-  ];
-  let result = text;
-  corrections.forEach(([from, to]) => {
-    if (Math.random() > 0.7) {
-      result = result.replace(new RegExp(`\\b${from}\\b`, "gi"), to);
-    }
-  });
-  return result;
+  const baseDelay = Math.min(words * 400, 3000);
+  const jitter = Math.random() * 1200;
+  return baseDelay + jitter + 500;
 }
 
 serve(async (req) => {
@@ -63,6 +43,50 @@ serve(async (req) => {
 
   try {
     const update = await req.json();
+    
+    // Handle callback queries (payment buttons)
+    if (update.callback_query) {
+      const cb = update.callback_query;
+      const chatId = cb.message?.chat?.id;
+      const data = cb.data || "";
+      
+      // Find creator by matching bot token - try all active creators
+      const { data: creators } = await supabase
+        .from("creators")
+        .select("*")
+        .eq("ai_enabled", true)
+        .eq("status", "active");
+      
+      if (!creators || creators.length === 0) return new Response("ok", { status: 200 });
+      
+      // Try to answer callback for any creator that has a valid bot token
+      for (const creator of creators) {
+        if (!creator.telegram_bot_token) continue;
+        try {
+          // Answer callback query
+          await fetch(`https://api.telegram.org/bot${creator.telegram_bot_token}/answerCallbackQuery`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ callback_query_id: cb.id }),
+          });
+          
+          // Handle payment method selection
+          if (data.startsWith("pay_")) {
+            const methodIndex = parseInt(data.replace("pay_", ""));
+            const config = Array.isArray(creator.payment_methods_config) ? creator.payment_methods_config : [];
+            const method = config[methodIndex] as any;
+            if (method) {
+              const text = `💳 <b>${method.name}</b>\n\n${method.instructions || "Contacta para más info"}`;
+              const markup = method.url ? { inline_keyboard: [[{ text: `✅ ${method.button_text || "Pagar"}`, url: method.url }]] } : undefined;
+              await sendTelegramMessage(creator.telegram_bot_token, chatId, text, markup);
+            }
+          }
+          break;
+        } catch { continue; }
+      }
+      return new Response("ok", { status: 200 });
+    }
+    
     const message = update.message || update.edited_message;
     if (!message) return new Response("ok", { status: 200 });
 
@@ -73,20 +97,31 @@ serve(async (req) => {
     const firstName = message.from?.first_name || "amigo";
     const username = message.from?.username || "";
 
-    // Find the creator by matching the bot token from the webhook URL
-    // We use a workaround: find any active creator with ai_enabled
+    // CRITICAL FIX: Find creator by trying ALL active creators and testing which bot token works
     const { data: creators } = await supabase
       .from("creators")
       .select("*")
       .eq("ai_enabled", true)
-      .eq("status", "active")
-      .limit(1);
+      .eq("status", "active");
 
-    if (!creators || creators.length === 0) {
-      return new Response("ok", { status: 200 });
+    if (!creators || creators.length === 0) return new Response("ok", { status: 200 });
+
+    // Find the right creator by checking which bot token can reach this chat
+    let creator = null;
+    for (const c of creators) {
+      if (!c.telegram_bot_token) continue;
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${c.telegram_bot_token}/getChat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId }),
+        });
+        const data = await res.json();
+        if (data.ok) { creator = c; break; }
+      } catch { continue; }
     }
 
-    const creator = creators[0];
+    if (!creator) return new Response("ok", { status: 200 });
 
     // Upsert fan
     const { data: fan } = await supabase
@@ -127,59 +162,57 @@ serve(async (req) => {
       sent_at: new Date().toISOString(),
     });
 
-    // Get conversation history (last 20 messages)
+    // Get conversation history (last 15 messages)
     const { data: history } = await supabase
       .from("messages")
       .select("role, content")
       .eq("conversation_id", conversation.id)
       .order("sent_at", { ascending: false })
-      .limit(20);
+      .limit(15);
 
     const historyForAI = (history || []).reverse().map(m => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
 
-    // Build emotion context
+    // Emotion context
     const emotionMap: Record<string, string> = {
-      happy: "Estás de muy buen humor hoy, con energía y cariñosa.",
-      sad: "Estás un poco triste hoy, aunque intentas no mostrarlo mucho.",
-      tired: "Estás cansada del gym o del trabajo, tus respuestas son más cortas.",
-      hungry: "Tienes hambre y lo mencionas de vez en cuando.",
-      excited: "Estás emocionada por algo que pasó hoy.",
-      bored: "Estás aburrida en casa, dispuesta a conversar.",
-      angry: "Estás un poco irritable, aunque no con el usuario.",
-      flirty: "Estás en modo coqueta, más amorosa y atenta.",
-      normal: "Estás en tu modo normal, tranquila y accesible.",
+      happy: "Estás contenta, con energía.",
+      sad: "Estás un poco bajoneada hoy.",
+      tired: "Estás cansada, tus msgs son cortos.",
+      hungry: "Tienes hambre.",
+      excited: "Estás emocionada por algo.",
+      bored: "Estás aburrida en casa.",
+      angry: "Estás irritable.",
+      flirty: "Estás coqueta.",
+      normal: "Normal, tranquila.",
     };
-
     const emotionContext = emotionMap[creator.current_emotion] || emotionMap["normal"];
 
-    // Determine language
     const langInstruction = userLang === "en"
-      ? "The user writes in English. Respond naturally in English while maintaining your Colombian personality."
-      : "El usuario escribe en español. Responde en español natural colombiano.";
+      ? "User writes English. Reply in casual English."
+      : "Responde en español natural.";
 
+    // IMPROVED SYSTEM PROMPT for ultra-short WhatsApp-like messages
     const systemPrompt = `${creator.system_prompt}
 
-ESTADO EMOCIONAL ACTUAL: ${emotionContext}
+ESTADO: ${emotionContext}
+IDIOMA: ${langInstruction}
 
-ADAPTACIÓN DE IDIOMA: ${langInstruction}
+REGLAS DE FORMATO OBLIGATORIAS:
+- Responde MÁXIMO 1-2 oraciones. Como un mensaje de WhatsApp real.
+- NO hagas listas, NO pongas viñetas, NO escribas párrafos largos.
+- Usa emojis con moderación (0-2 por mensaje máximo).
+- Varía: a veces responde con 1 sola palabra ("jaja", "sii", "uff"), a veces una frase corta.
+- PROHIBIDO usar asteriscos, formato markdown, comillas o estructuras formales.
+- Escribe como una persona de 22 años por WhatsApp: rápido, simple, directo.
+- NO repitas patrones. NO saludes siempre igual. NO siempre hagas preguntas al final.
+- Puedes dejar mensajes sin pregunta, como haría una persona real.
+- El usuario se llama ${firstName}
 
-INSTRUCCIONES ADICIONALES:
-- Escribe exactamente como lo haría una persona real en Telegram
-- Usa abreviaciones naturales, emojis ocasionales pero no excesivos
-- Varía la longitud de tus respuestas (a veces solo 1 palabra, a veces un párrafo)
-- Si el usuario es agresivo, pon límites de forma natural sin ser grosera
-- Recuerda: el usuario se llama ${firstName}
+PAGO: Si el usuario pide contenido VIP, suscripción, precios o cómo pagar, responde de forma natural y breve.`;
 
-CONTEXTO DE MONETIZACIÓN:
-- Canal VIP: ${creator.vip_channel_link || "disponible próximamente"}
-- Métodos de pago: ${Array.isArray(creator.payment_methods) ? creator.payment_methods.join(", ") : "Nequi, PSE, Crypto"}
-- Solo menciona pagos/ventas de forma natural cuando la conversación fluya hacia eso
-`;
-
-    // Call Lovable AI
+    // Call AI
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -193,35 +226,54 @@ CONTEXTO DE MONETIZACIÓN:
           ...historyForAI,
           { role: "user", content: userText },
         ],
-        max_tokens: 300,
-        temperature: 0.9,
+        max_tokens: 80,
+        temperature: 1.0,
       }),
     });
 
     if (!aiResponse.ok) {
-      const errText = await aiResponse.text();
-      console.error("AI error:", aiResponse.status, errText);
+      console.error("AI error:", aiResponse.status, await aiResponse.text());
       return new Response("ok", { status: 200 });
     }
 
     const aiData = await aiResponse.json();
     let replyText = aiData.choices?.[0]?.message?.content || "...";
-    replyText = addHumanErrors(replyText);
+    
+    // Clean up AI artifacts
+    replyText = replyText.replace(/\*\*/g, "").replace(/\*/g, "").replace(/^["']|["']$/g, "").trim();
+    
+    // Truncate if too long (max ~150 chars for naturalness)
+    if (replyText.length > 160) {
+      const cutoff = replyText.lastIndexOf(" ", 140);
+      replyText = replyText.slice(0, cutoff > 50 ? cutoff : 140);
+    }
 
-    // Simulate typing delay
+    // Typing delay
     const typingDelay = humanizeDelay(replyText);
     await sendTypingAction(creator.telegram_bot_token, chatId);
-    await new Promise(resolve => setTimeout(resolve, Math.min(typingDelay, 5000)));
+    await new Promise(resolve => setTimeout(resolve, Math.min(typingDelay, 4000)));
 
-    // Check if we should add payment button (only for explicit content requests)
-    const wantsContent = /vip|exclusivo|contenido|fotos|videos|pack|precio|cuánto|cuanto|comprar/i.test(userText);
+    // Check if user wants payment/subscription info
+    const wantsPayment = /pagar|pago|suscri|vip|precio|cuánto|cuanto|nequi|binance|comprar|contenido exclusivo|cómo me suscribo|como pago/i.test(userText);
     let replyMarkup = undefined;
-    if (wantsContent && creator.vip_channel_link) {
-      replyMarkup = {
-        inline_keyboard: [[
-          { text: "🔥 Ver contenido exclusivo", url: creator.vip_channel_link },
-        ]],
-      };
+
+    if (wantsPayment) {
+      const payConfig = Array.isArray(creator.payment_methods_config) ? creator.payment_methods_config : [];
+      if (payConfig.length > 0) {
+        // Build payment buttons
+        const buttons = (payConfig as any[]).map((m: any, i: number) => ([{
+          text: `${m.emoji || "💳"} ${m.name}`,
+          callback_data: `pay_${i}`,
+        }]));
+        if (creator.vip_channel_link) {
+          buttons.push([{ text: "🔥 Canal VIP", url: creator.vip_channel_link }] as any);
+        }
+        replyMarkup = { inline_keyboard: buttons };
+      } else if (creator.vip_channel_link) {
+        replyMarkup = {
+          inline_keyboard: [[{ text: "🔥 Ver contenido exclusivo", url: creator.vip_channel_link }]],
+        };
+      }
     }
 
     await sendTelegramMessage(creator.telegram_bot_token, chatId, replyText, replyMarkup);
@@ -236,7 +288,7 @@ CONTEXTO DE MONETIZACIÓN:
       sent_at: new Date().toISOString(),
     });
 
-    // Update conversation stats
+    // Update conversation
     await supabase.from("conversations").update({
       last_message_at: new Date().toISOString(),
       message_count: (conversation.message_count || 0) + 2,
@@ -250,11 +302,12 @@ CONTEXTO DE MONETIZACIÓN:
       event_data: { user_message: userText.slice(0, 100), ai_tokens: aiData.usage?.total_tokens },
     });
 
-    // Randomly update emotion (every ~20 messages)
+    // Random emotion shift (~5%)
     if (Math.random() < 0.05) {
       const emotions = ["happy", "normal", "tired", "excited", "flirty", "bored"];
-      const newEmotion = emotions[Math.floor(Math.random() * emotions.length)];
-      await supabase.from("creators").update({ current_emotion: newEmotion }).eq("id", creator.id);
+      await supabase.from("creators").update({ 
+        current_emotion: emotions[Math.floor(Math.random() * emotions.length)] 
+      }).eq("id", creator.id);
     }
 
     return new Response("ok", { status: 200 });
