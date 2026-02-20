@@ -13,6 +13,9 @@ const supabase = createClient(
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
+// In-memory dedup cache to prevent processing same update twice
+const processedUpdates = new Set<number>();
+
 async function sendTypingAction(botToken: string, chatId: number) {
   await fetch(`https://api.telegram.org/bot${botToken}/sendChatAction`, {
     method: "POST",
@@ -29,6 +32,28 @@ async function sendTelegramMessage(botToken: string, chatId: number, text: strin
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+async function sendTelegramPhoto(botToken: string, chatId: number, photo: string, caption?: string) {
+  const body: any = { chat_id: chatId, photo, parse_mode: "HTML" };
+  if (caption) body.caption = caption;
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return await res.json();
+}
+
+async function sendTelegramVideo(botToken: string, chatId: number, video: string, caption?: string) {
+  const body: any = { chat_id: chatId, video, parse_mode: "HTML" };
+  if (caption) body.caption = caption;
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendVideo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return await res.json();
 }
 
 function humanizeDelay(text: string): number {
@@ -69,7 +94,22 @@ serve(async (req) => {
     const botToken = url.searchParams.get("token");
     const update = await req.json();
 
-    // ===== FIND CREATOR BY BOT TOKEN FROM URL =====
+    // ===== DEDUP: Prevent processing same update twice =====
+    const updateId = update.update_id;
+    if (updateId) {
+      if (processedUpdates.has(updateId)) {
+        console.log(`Skipping duplicate update_id: ${updateId}`);
+        return new Response("ok", { status: 200 });
+      }
+      processedUpdates.add(updateId);
+      // Keep cache small - remove old entries if > 500
+      if (processedUpdates.size > 500) {
+        const arr = Array.from(processedUpdates);
+        for (let i = 0; i < 200; i++) processedUpdates.delete(arr[i]);
+      }
+    }
+
+    // ===== FIND CREATOR BY BOT TOKEN =====
     let creator: any = null;
     if (botToken) {
       const { data } = await supabase
@@ -82,7 +122,7 @@ serve(async (req) => {
       creator = data;
     }
 
-    // Fallback: if no token in URL, try legacy matching (but only match ONE)
+    // Fallback: only if exactly ONE creator exists
     if (!creator) {
       const { data: creators } = await supabase
         .from("creators")
@@ -92,9 +132,8 @@ serve(async (req) => {
       
       if (creators && creators.length === 1) {
         creator = creators[0];
-      } else if (creators && creators.length > 1) {
-        // Cannot determine which creator without token - log and exit
-        console.error("Multiple creators found but no token in webhook URL. Register webhooks with token parameter.");
+      } else {
+        console.error("No token provided and multiple creators exist. Ignoring.");
         return new Response("ok", { status: 200 });
       }
     }
@@ -141,6 +180,19 @@ serve(async (req) => {
     const userLang = message.from?.language_code || "es";
     const firstName = message.from?.first_name || "amigo";
     const username = message.from?.username || "";
+    const telegramMessageId = String(message.message_id);
+
+    // ===== DB-LEVEL DEDUP: Check if this telegram_message_id was already processed =====
+    const { data: existingMsg } = await supabase
+      .from("messages")
+      .select("id")
+      .eq("telegram_message_id", telegramMessageId)
+      .limit(1);
+
+    if (existingMsg && existingMsg.length > 0) {
+      console.log(`Message ${telegramMessageId} already processed, skipping.`);
+      return new Response("ok", { status: 200 });
+    }
 
     // Upsert fan
     const { data: fan } = await supabase
@@ -172,12 +224,12 @@ serve(async (req) => {
 
     if (!conversation) return new Response("ok", { status: 200 });
 
-    // Save user message
+    // Save user message FIRST
     await supabase.from("messages").insert({
       conversation_id: conversation.id,
       role: "user",
       content: userText,
-      telegram_message_id: String(message.message_id),
+      telegram_message_id: telegramMessageId,
       sent_at: new Date().toISOString(),
     });
 
@@ -189,6 +241,7 @@ serve(async (req) => {
       .order("sent_at", { ascending: false })
       .limit(15);
 
+    // History already includes the user message we just inserted - use as-is
     const historyForAI = (history || []).reverse().map(m => ({
       role: m.role as "user" | "assistant",
       content: m.content,
@@ -235,7 +288,7 @@ REGLAS DE FORMATO:
 
 PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natural y breve.`;
 
-    // Call AI
+    // Call AI - DO NOT add userText again, it's already in historyForAI
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -247,7 +300,6 @@ PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natu
         messages: [
           { role: "system", content: systemPrompt },
           ...historyForAI,
-          { role: "user", content: userText },
         ],
         max_tokens: 80,
         temperature: 1.0,

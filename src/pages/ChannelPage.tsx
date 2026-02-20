@@ -48,13 +48,41 @@ export default function ChannelPage() {
     try {
       const creator = creators.find((c: any) => c.id === post.creator_id);
       if (!creator?.telegram_bot_token || !creator?.telegram_channel_id) return toast.error("Configura token y canal ID");
-      const res = await fetch(`https://api.telegram.org/bot${creator.telegram_bot_token}/sendMessage`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: creator.telegram_channel_id, text: post.caption, parse_mode: "HTML" }),
-      });
-      const data = await res.json();
+      
+      let data: any;
+      if (post.post_type === "photo" && post.media_url) {
+        const res = await fetch(`https://api.telegram.org/bot${creator.telegram_bot_token}/sendPhoto`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: creator.telegram_channel_id, photo: post.media_url, caption: post.caption || "", parse_mode: "HTML" }),
+        });
+        data = await res.json();
+      } else if (post.post_type === "video" && post.media_url) {
+        const res = await fetch(`https://api.telegram.org/bot${creator.telegram_bot_token}/sendVideo`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: creator.telegram_channel_id, video: post.media_url, caption: post.caption || "", parse_mode: "HTML" }),
+        });
+        data = await res.json();
+      } else {
+        const res = await fetch(`https://api.telegram.org/bot${creator.telegram_bot_token}/sendMessage`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: creator.telegram_channel_id, text: post.caption, parse_mode: "HTML" }),
+        });
+        data = await res.json();
+      }
       if (!data.ok) throw new Error(data.description);
-      await supabase.from("channel_posts").update({ status: "published", published_at: new Date().toISOString(), telegram_message_id: String(data.result.message_id) }).eq("id", post.id);
+      
+      // Store telegram file_id for reuse
+      const telegramMsgId = String(data.result.message_id);
+      let fileId = null;
+      if (data.result.photo) fileId = data.result.photo[data.result.photo.length - 1]?.file_id;
+      if (data.result.video) fileId = data.result.video.file_id;
+      
+      await supabase.from("channel_posts").update({ 
+        status: "published", 
+        published_at: new Date().toISOString(), 
+        telegram_message_id: telegramMsgId,
+        engagement: { file_id: fileId, views: 0, reactions: 0, shares: 0 }
+      }).eq("id", post.id);
       toast.success("Publicado ✅");
       load();
     } catch (e: any) { toast.error(e.message); }
