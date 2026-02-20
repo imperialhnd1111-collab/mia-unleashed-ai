@@ -11,21 +11,15 @@ export default function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const mode = "login";
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        toast.success("Bienvenido al sistema 🔥");
-      } else {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        toast.success("Cuenta creada. Revisa tu correo para confirmar.");
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      toast.success("Bienvenido al sistema 🔥");
     } catch (error: any) {
       toast.error(error.message || "Error de autenticación");
     } finally {
@@ -56,12 +50,8 @@ export default function AuthPage() {
 
         {/* Card */}
         <div className="glass rounded-2xl p-8 shadow-card slide-in">
-          <h2 className="text-xl font-semibold text-foreground mb-1">
-            {mode === "login" ? "Iniciar Sesión" : "Crear Cuenta"}
-          </h2>
-          <p className="text-muted-foreground text-sm mb-6">
-            {mode === "login" ? "Accede al sistema de gestión" : "Configura tu panel de control"}
-          </p>
+          <h2 className="text-xl font-semibold text-foreground mb-1">Iniciar Sesión</h2>
+          <p className="text-muted-foreground text-sm mb-6">Accede al sistema de gestión</p>
 
           <form onSubmit={handleAuth} className="space-y-4">
             <div className="space-y-2">
@@ -101,18 +91,11 @@ export default function AuthPage() {
             >
               {loading ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Procesando...</>
-              ) : mode === "login" ? "Entrar al sistema" : "Crear cuenta"}
+              ) : "Entrar al sistema"}
             </Button>
           </form>
 
-          <div className="mt-4 text-center">
-            <button
-              onClick={() => setMode(mode === "login" ? "signup" : "login")}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
-            >
-              {mode === "login" ? "¿Primera vez? Crear cuenta" : "¿Ya tienes cuenta? Inicia sesión"}
-            </button>
-          </div>
+          {/* Admin only - no signup */}
         </div>
       </div>
     </div>
