@@ -38,55 +38,100 @@ function humanizeDelay(text: string): number {
   return baseDelay + jitter + 500;
 }
 
+function getLocalTime(timezone: string): { hour: number; minute: number; dayOfWeek: number; formatted: string } {
+  try {
+    const now = new Date();
+    const options: Intl.DateTimeFormatOptions = { timeZone: timezone, hour: "numeric", minute: "numeric", hour12: false, weekday: "long" };
+    const parts = new Intl.DateTimeFormat("es-CO", options).formatToParts(now);
+    const hour = parseInt(parts.find(p => p.type === "hour")?.value || "12");
+    const minute = parseInt(parts.find(p => p.type === "minute")?.value || "0");
+    const weekday = parts.find(p => p.type === "weekday")?.value || "lunes";
+    const dayOfWeek = now.getDay();
+    
+    let timeOfDay = "madrugada";
+    if (hour >= 6 && hour < 12) timeOfDay = "mañana";
+    else if (hour >= 12 && hour < 14) timeOfDay = "mediodía";
+    else if (hour >= 14 && hour < 19) timeOfDay = "tarde";
+    else if (hour >= 19 && hour < 23) timeOfDay = "noche";
+    else timeOfDay = "madrugada";
+    
+    return { hour, minute, dayOfWeek, formatted: `Son las ${hour}:${minute < 10 ? "0" + minute : minute} (${timeOfDay}) del ${weekday}` };
+  } catch {
+    return { hour: 12, minute: 0, dayOfWeek: 1, formatted: "hora desconocida" };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    const url = new URL(req.url);
+    const botToken = url.searchParams.get("token");
     const update = await req.json();
-    
-    // Handle callback queries (payment buttons)
-    if (update.callback_query) {
-      const cb = update.callback_query;
-      const chatId = cb.message?.chat?.id;
-      const data = cb.data || "";
-      
-      // Find creator by matching bot token - try all active creators
+
+    // ===== FIND CREATOR BY BOT TOKEN FROM URL =====
+    let creator: any = null;
+    if (botToken) {
+      const { data } = await supabase
+        .from("creators")
+        .select("*")
+        .eq("telegram_bot_token", botToken)
+        .eq("ai_enabled", true)
+        .eq("status", "active")
+        .single();
+      creator = data;
+    }
+
+    // Fallback: if no token in URL, try legacy matching (but only match ONE)
+    if (!creator) {
       const { data: creators } = await supabase
         .from("creators")
         .select("*")
         .eq("ai_enabled", true)
         .eq("status", "active");
       
-      if (!creators || creators.length === 0) return new Response("ok", { status: 200 });
-      
-      // Try to answer callback for any creator that has a valid bot token
-      for (const creator of creators) {
-        if (!creator.telegram_bot_token) continue;
-        try {
-          // Answer callback query
-          await fetch(`https://api.telegram.org/bot${creator.telegram_bot_token}/answerCallbackQuery`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ callback_query_id: cb.id }),
-          });
-          
-          // Handle payment method selection
-          if (data.startsWith("pay_")) {
-            const methodIndex = parseInt(data.replace("pay_", ""));
-            const config = Array.isArray(creator.payment_methods_config) ? creator.payment_methods_config : [];
-            const method = config[methodIndex] as any;
-            if (method) {
-              const text = `💳 <b>${method.name}</b>\n\n${method.instructions || "Contacta para más info"}`;
-              const markup = method.url ? { inline_keyboard: [[{ text: `✅ ${method.button_text || "Pagar"}`, url: method.url }]] } : undefined;
-              await sendTelegramMessage(creator.telegram_bot_token, chatId, text, markup);
-            }
-          }
-          break;
-        } catch { continue; }
+      if (creators && creators.length === 1) {
+        creator = creators[0];
+      } else if (creators && creators.length > 1) {
+        // Cannot determine which creator without token - log and exit
+        console.error("Multiple creators found but no token in webhook URL. Register webhooks with token parameter.");
+        return new Response("ok", { status: 200 });
       }
+    }
+
+    if (!creator) return new Response("ok", { status: 200 });
+    
+    const creatorBotToken = creator.telegram_bot_token;
+    if (!creatorBotToken) return new Response("ok", { status: 200 });
+
+    // ===== HANDLE CALLBACK QUERIES =====
+    if (update.callback_query) {
+      const cb = update.callback_query;
+      const chatId = cb.message?.chat?.id;
+      const data = cb.data || "";
+      
+      try {
+        await fetch(`https://api.telegram.org/bot${creatorBotToken}/answerCallbackQuery`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ callback_query_id: cb.id }),
+        });
+        
+        if (data.startsWith("pay_")) {
+          const methodIndex = parseInt(data.replace("pay_", ""));
+          const config = Array.isArray(creator.payment_methods_config) ? creator.payment_methods_config : [];
+          const method = config[methodIndex] as any;
+          if (method) {
+            const text = `💳 <b>${method.name}</b>\n\n${method.instructions || "Contacta para más info"}`;
+            const markup = method.url ? { inline_keyboard: [[{ text: `✅ ${method.button_text || "Pagar"}`, url: method.url }]] } : undefined;
+            await sendTelegramMessage(creatorBotToken, chatId, text, markup);
+          }
+        }
+      } catch (e) { console.error("Callback error:", e); }
       return new Response("ok", { status: 200 });
     }
     
+    // ===== HANDLE MESSAGES =====
     const message = update.message || update.edited_message;
     if (!message) return new Response("ok", { status: 200 });
 
@@ -96,32 +141,6 @@ serve(async (req) => {
     const userLang = message.from?.language_code || "es";
     const firstName = message.from?.first_name || "amigo";
     const username = message.from?.username || "";
-
-    // CRITICAL FIX: Find creator by trying ALL active creators and testing which bot token works
-    const { data: creators } = await supabase
-      .from("creators")
-      .select("*")
-      .eq("ai_enabled", true)
-      .eq("status", "active");
-
-    if (!creators || creators.length === 0) return new Response("ok", { status: 200 });
-
-    // Find the right creator by checking which bot token can reach this chat
-    let creator = null;
-    for (const c of creators) {
-      if (!c.telegram_bot_token) continue;
-      try {
-        const res = await fetch(`https://api.telegram.org/bot${c.telegram_bot_token}/getChat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: chatId }),
-        });
-        const data = await res.json();
-        if (data.ok) { creator = c; break; }
-      } catch { continue; }
-    }
-
-    if (!creator) return new Response("ok", { status: 200 });
 
     // Upsert fan
     const { data: fan } = await supabase
@@ -162,7 +181,7 @@ serve(async (req) => {
       sent_at: new Date().toISOString(),
     });
 
-    // Get conversation history (last 15 messages)
+    // Get conversation history (last 15 messages for THIS conversation only)
     const { data: history } = await supabase
       .from("messages")
       .select("role, content")
@@ -175,14 +194,17 @@ serve(async (req) => {
       content: m.content,
     }));
 
+    // Timezone-aware context
+    const localTime = getLocalTime(creator.timezone || "America/Bogota");
+
     // Emotion context
     const emotionMap: Record<string, string> = {
       happy: "Estás contenta, con energía.",
-      sad: "Estás un poco bajoneada hoy.",
-      tired: "Estás cansada, tus msgs son cortos.",
+      sad: "Estás un poco bajoneada.",
+      tired: "Estás cansada, msgs cortos.",
       hungry: "Tienes hambre.",
-      excited: "Estás emocionada por algo.",
-      bored: "Estás aburrida en casa.",
+      excited: "Estás emocionada.",
+      bored: "Estás aburrida.",
       angry: "Estás irritable.",
       flirty: "Estás coqueta.",
       normal: "Normal, tranquila.",
@@ -193,24 +215,25 @@ serve(async (req) => {
       ? "User writes English. Reply in casual English."
       : "Responde en español natural.";
 
-    // IMPROVED SYSTEM PROMPT for ultra-short WhatsApp-like messages
     const systemPrompt = `${creator.system_prompt}
+
+HORA ACTUAL: ${localTime.formatted} en ${creator.timezone || "America/Bogota"}.
+Actúa coherente con tu horario: si es madrugada estás dormida o medio dormida, si es mañana puedes estar en el gym o despertando, si es tarde puedes estar grabando contenido o descansando, si es noche estás relajada viendo Netflix o similar. NUNCA digas que vas al gym a las 12am o cosas incoherentes con la hora.
 
 ESTADO: ${emotionContext}
 IDIOMA: ${langInstruction}
 
-REGLAS DE FORMATO OBLIGATORIAS:
-- Responde MÁXIMO 1-2 oraciones. Como un mensaje de WhatsApp real.
-- NO hagas listas, NO pongas viñetas, NO escribas párrafos largos.
-- Usa emojis con moderación (0-2 por mensaje máximo).
-- Varía: a veces responde con 1 sola palabra ("jaja", "sii", "uff"), a veces una frase corta.
-- PROHIBIDO usar asteriscos, formato markdown, comillas o estructuras formales.
-- Escribe como una persona de 22 años por WhatsApp: rápido, simple, directo.
-- NO repitas patrones. NO saludes siempre igual. NO siempre hagas preguntas al final.
-- Puedes dejar mensajes sin pregunta, como haría una persona real.
+REGLAS DE FORMATO:
+- MÁXIMO 1-2 oraciones. Como WhatsApp real.
+- NO listas, NO viñetas, NO párrafos.
+- Emojis 0-2 max.
+- Varía: a veces 1 palabra, a veces frase corta.
+- PROHIBIDO asteriscos, markdown, comillas.
+- Como persona de 22 años por WhatsApp: rápido, simple.
+- NO repitas patrones. NO saludes siempre igual. NO siempre preguntes al final.
 - El usuario se llama ${firstName}
 
-PAGO: Si el usuario pide contenido VIP, suscripción, precios o cómo pagar, responde de forma natural y breve.`;
+PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natural y breve.`;
 
     // Call AI
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -242,7 +265,7 @@ PAGO: Si el usuario pide contenido VIP, suscripción, precios o cómo pagar, res
     // Clean up AI artifacts
     replyText = replyText.replace(/\*\*/g, "").replace(/\*/g, "").replace(/^["']|["']$/g, "").trim();
     
-    // Truncate if too long (max ~150 chars for naturalness)
+    // Truncate if too long
     if (replyText.length > 160) {
       const cutoff = replyText.lastIndexOf(" ", 140);
       replyText = replyText.slice(0, cutoff > 50 ? cutoff : 140);
@@ -250,17 +273,16 @@ PAGO: Si el usuario pide contenido VIP, suscripción, precios o cómo pagar, res
 
     // Typing delay
     const typingDelay = humanizeDelay(replyText);
-    await sendTypingAction(creator.telegram_bot_token, chatId);
+    await sendTypingAction(creatorBotToken, chatId);
     await new Promise(resolve => setTimeout(resolve, Math.min(typingDelay, 4000)));
 
-    // Check if user wants payment/subscription info
-    const wantsPayment = /pagar|pago|suscri|vip|precio|cuánto|cuanto|nequi|binance|comprar|contenido exclusivo|cómo me suscribo|como pago/i.test(userText);
+    // Check if user wants payment info
+    const wantsPayment = /pagar|pago|suscri|vip|precio|cuánto|cuanto|nequi|binance|comprar|contenido exclusivo|cómo me suscribo|como pago|método|metodo|enlace|link/i.test(userText);
     let replyMarkup = undefined;
 
     if (wantsPayment) {
       const payConfig = Array.isArray(creator.payment_methods_config) ? creator.payment_methods_config : [];
       if (payConfig.length > 0) {
-        // Build payment buttons
         const buttons = (payConfig as any[]).map((m: any, i: number) => ([{
           text: `${m.emoji || "💳"} ${m.name}`,
           callback_data: `pay_${i}`,
@@ -276,7 +298,7 @@ PAGO: Si el usuario pide contenido VIP, suscripción, precios o cómo pagar, res
       }
     }
 
-    await sendTelegramMessage(creator.telegram_bot_token, chatId, replyText, replyMarkup);
+    await sendTelegramMessage(creatorBotToken, chatId, replyText, replyMarkup);
 
     // Save assistant message
     await supabase.from("messages").insert({

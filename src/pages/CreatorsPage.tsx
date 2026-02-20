@@ -202,9 +202,10 @@ export default function CreatorsPage() {
   const registerWebhook = async (creator: Creator) => {
     if (!creator.telegram_bot_token) return toast.error("Agrega el token del bot");
     try {
+      const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/telegram-webhook?token=${encodeURIComponent(creator.telegram_bot_token)}`;
       const res = await fetch(`https://api.telegram.org/bot${creator.telegram_bot_token}/setWebhook`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/telegram-webhook`, allowed_updates: ["message", "callback_query"] }),
+        body: JSON.stringify({ url: webhookUrl, allowed_updates: ["message", "callback_query"] }),
       });
       const data = await res.json();
       if (data.ok) toast.success("Webhook registrado ✅"); else toast.error(data.description);
