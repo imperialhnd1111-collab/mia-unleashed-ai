@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.upload-to-telegram]
 verify_jwt = false
+
+[functions.channel-ai]
+verify_jwt = false
