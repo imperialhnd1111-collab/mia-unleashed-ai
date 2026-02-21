@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Radio, Clock, Send, Eye } from "lucide-react";
+import { Plus, Radio, Clock, Send, Eye, Upload, X, Image, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,8 @@ export default function ChannelPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [publishing, setPublishing] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({ creator_id: "", caption: "", media_url: "", post_type: "text", scheduled_at: "" });
 
   const load = async () => {
@@ -71,7 +73,6 @@ export default function ChannelPage() {
       }
       if (!data.ok) throw new Error(data.description);
       
-      // Store telegram file_id for reuse
       const telegramMsgId = String(data.result.message_id);
       let fileId = null;
       if (data.result.photo) fileId = data.result.photo[data.result.photo.length - 1]?.file_id;
@@ -88,6 +89,39 @@ export default function ChannelPage() {
     } catch (e: any) { toast.error(e.message); }
     finally { setPublishing(null); }
   };
+
+  const publishWithFiles = async () => {
+    if (!form.creator_id || selectedFiles.length === 0) return toast.error("Selecciona creadora y archivos");
+    setPublishing("new");
+    try {
+      const formData = new FormData();
+      formData.append("creator_id", form.creator_id);
+      formData.append("purpose", "channel_post");
+      formData.append("caption", form.caption || "");
+      selectedFiles.forEach((file, i) => formData.append(`file_${i}`, file));
+
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-to-telegram`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      toast.success(`Publicado con ${selectedFiles.length} archivo(s) ✅`);
+      setSelectedFiles([]);
+      setShowForm(false);
+      load();
+    } catch (e: any) { toast.error(e.message); }
+    setPublishing(null);
+  };
+
+  const addFiles = (files: FileList | null) => {
+    if (!files) return;
+    const newFiles = Array.from(files).slice(0, 10 - selectedFiles.length);
+    setSelectedFiles(prev => [...prev, ...newFiles].slice(0, 10));
+  };
+
+  const removeFile = (index: number) => setSelectedFiles(prev => prev.filter((_, i) => i !== index));
 
   return (
     <div className="space-y-6">
@@ -170,19 +204,61 @@ export default function ChannelPage() {
                 <Label className="text-sm">Creadora</Label>
                 <Select value={form.creator_id} onValueChange={v => setForm(f => ({ ...f, creator_id: v }))}><SelectTrigger className="bg-muted border-border"><SelectValue placeholder="Selecciona" /></SelectTrigger><SelectContent>{creators.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm">Tipo</Label>
-                <Select value={form.post_type} onValueChange={v => setForm(f => ({ ...f, post_type: v }))}><SelectTrigger className="bg-muted border-border"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="text">📝 Texto</SelectItem><SelectItem value="photo">📸 Foto</SelectItem><SelectItem value="video">🎬 Video</SelectItem></SelectContent></Select>
+              <div className="space-y-1.5"><Label className="text-sm">Texto / Caption</Label><Textarea value={form.caption} onChange={e => setForm(f => ({ ...f, caption: e.target.value }))} className="bg-muted border-border min-h-24" /></div>
+              
+              {/* File upload section */}
+              <div className="space-y-2">
+                <Label className="text-sm">📸 Fotos / Videos (hasta 10)</Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  className="hidden"
+                  onChange={e => addFiles(e.target.files)}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={selectedFiles.length >= 10}
+                  className="w-full border-2 border-dashed border-border rounded-xl p-6 text-center hover:border-primary/50 transition-colors"
+                >
+                  <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    {selectedFiles.length > 0 ? `${selectedFiles.length}/10 archivos` : "Toca para subir fotos o videos"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Se suben directo al canal via Telegram</p>
+                </button>
+                {selectedFiles.length > 0 && (
+                  <div className="grid grid-cols-5 gap-2">
+                    {selectedFiles.map((file, i) => (
+                      <div key={i} className="relative group">
+                        <div className="aspect-square rounded-lg bg-secondary flex items-center justify-center overflow-hidden">
+                          {file.type.startsWith("image/") ? (
+                            <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <Image className="w-5 h-5 text-muted-foreground" />
+                          )}
+                        </div>
+                        <button onClick={() => removeFile(i)} className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="space-y-1.5"><Label className="text-sm">Texto *</Label><Textarea value={form.caption} onChange={e => setForm(f => ({ ...f, caption: e.target.value }))} className="bg-muted border-border min-h-24" /></div>
-              {form.post_type !== "text" && (
-                <div className="space-y-1.5"><Label className="text-sm">URL del media</Label><Input value={form.media_url} onChange={e => setForm(f => ({ ...f, media_url: e.target.value }))} className="bg-muted border-border" /></div>
-              )}
+
               <div className="space-y-1.5"><Label className="text-sm">Programar</Label><Input type="datetime-local" value={form.scheduled_at} onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))} className="bg-muted border-border" /></div>
             </div>
             <div className="flex gap-3 mt-6">
-              <Button onClick={handleSave} className="flex-1 gradient-primary text-white glow-rose">Programar</Button>
-              <Button variant="outline" onClick={() => setShowForm(false)} className="border-border">Cancelar</Button>
+              {selectedFiles.length > 0 ? (
+                <Button onClick={publishWithFiles} disabled={publishing === "new"} className="flex-1 gradient-primary text-white glow-rose">
+                  {publishing === "new" ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Subiendo...</> : <><Send className="w-4 h-4 mr-2" />Publicar con {selectedFiles.length} foto(s)</>}
+                </Button>
+              ) : (
+                <Button onClick={handleSave} className="flex-1 gradient-primary text-white glow-rose">Programar</Button>
+              )}
+              <Button variant="outline" onClick={() => { setShowForm(false); setSelectedFiles([]); }} className="border-border">Cancelar</Button>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Bot, Power, Edit, Trash2, Send, Copy, CheckCircle, CreditCard, Wand2 } from "lucide-react";
+import { Plus, Bot, Power, Edit, Trash2, Send, Copy, CheckCircle, CreditCard, Wand2, Camera, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,6 +110,8 @@ export default function CreatorsPage() {
   const [editing, setEditing] = useState<Creator | null>(null);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"basic" | "prompt" | "payments" | "channel">("basic");
+  const [uploadingAvatar, setUploadingAvatar] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [profile, setProfile] = useState<PromptProfile>(emptyProfile);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [form, setForm] = useState({
@@ -218,6 +220,27 @@ export default function CreatorsPage() {
     setPaymentMethods(p => p.map((m, idx) => idx === i ? { ...m, [field]: value } : m));
   };
 
+  const handleAvatarUpload = async (creatorId: string, file: File) => {
+    setUploadingAvatar(creatorId);
+    try {
+      const formData = new FormData();
+      formData.append("creator_id", creatorId);
+      formData.append("purpose", "avatar");
+      formData.append("file_0", file);
+
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-to-telegram`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      toast.success("Foto actualizada ✅");
+      load();
+    } catch (e: any) { toast.error(e.message); }
+    setUploadingAvatar(null);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -258,7 +281,25 @@ export default function CreatorsPage() {
           {creators.map((c) => (
             <div key={c.id} className="glass rounded-2xl p-4 md:p-5">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <img src={c.avatar_url || miaAvatar} alt={c.name} className="w-12 h-12 rounded-full object-cover border-2 border-primary flex-shrink-0" />
+                <div className="relative group flex-shrink-0">
+                  <img src={c.avatar_url || miaAvatar} alt={c.name} className="w-12 h-12 rounded-full object-cover border-2 border-primary" />
+                  <button
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = "image/*";
+                      input.onchange = (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0];
+                        if (file) handleAvatarUpload(c.id, file);
+                      };
+                      input.click();
+                    }}
+                    disabled={uploadingAvatar === c.id}
+                    className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  >
+                    {uploadingAvatar === c.id ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Camera className="w-4 h-4 text-white" />}
+                  </button>
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-bold text-foreground">{c.name}</h3>
