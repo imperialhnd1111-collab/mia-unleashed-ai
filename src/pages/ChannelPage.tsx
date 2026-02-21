@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import ChannelAIPanel from "@/components/ChannelAIPanel";
 
 export default function ChannelPage() {
   const [posts, setPosts] = useState<any[]>([]);
@@ -134,6 +135,8 @@ export default function ChannelPage() {
           <Plus className="w-4 h-4 mr-2" /> Nuevo post
         </Button>
       </div>
+
+      <ChannelAIPanel creators={creators} onUseSuggestion={(caption) => { setForm(f => ({ ...f, caption })); setShowForm(true); }} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Scheduled */}
