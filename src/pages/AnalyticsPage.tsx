@@ -1,25 +1,51 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { BarChart2, TrendingUp, Users, MessageSquare, DollarSign, Clock } from "lucide-react";
+import { BarChart2, TrendingUp, Users, MessageSquare, DollarSign, Clock, Brain, Loader2, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
 
 export default function AnalyticsPage() {
   const [data, setData] = useState({ fans: 0, conversations: 0, messages: 0, events: [] as any[], topFans: [] as any[] });
   const [loading, setLoading] = useState(true);
+  const [creators, setCreators] = useState<any[]>([]);
+  const [selectedCreator, setSelectedCreator] = useState<string>("all");
+  const [aiAnalysis, setAiAnalysis] = useState<string>("");
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     const load = async () => {
-      const [{ count: fans }, { count: conv }, { count: msgs }, { data: events }, { data: topFans }] = await Promise.all([
+      const [{ count: fans }, { count: conv }, { count: msgs }, { data: events }, { data: topFans }, { data: creatorsData }] = await Promise.all([
         supabase.from("fans").select("*", { count: "exact", head: true }),
         supabase.from("conversations").select("*", { count: "exact", head: true }),
         supabase.from("messages").select("*", { count: "exact", head: true }),
         supabase.from("analytics_events").select("*").order("created_at", { ascending: false }).limit(20),
         supabase.from("fans").select("first_name, telegram_username, total_spent, relationship_level").order("total_spent", { ascending: false }).limit(5),
+        supabase.from("creators").select("id, name").order("created_at"),
       ]);
       setData({ fans: fans || 0, conversations: conv || 0, messages: msgs || 0, events: events || [], topFans: topFans || [] });
+      setCreators(creatorsData || []);
       setLoading(false);
     };
     load();
   }, []);
+
+  const runAiAnalysis = async () => {
+    setAiLoading(true);
+    setAiAnalysis("");
+    try {
+      const { data: result, error } = await supabase.functions.invoke("analytics-ai", {
+        body: { creator_id: selectedCreator === "all" ? null : selectedCreator },
+      });
+      if (error) throw error;
+      if (result?.error) throw new Error(result.error);
+      setAiAnalysis(result.analysis || "Sin resultados");
+    } catch (e: any) {
+      toast.error(e.message || "Error al analizar");
+    }
+    setAiLoading(false);
+  };
 
   const metrics = [
     { label: "Total fans", value: data.fans, icon: Users },
@@ -46,6 +72,50 @@ export default function AnalyticsPage() {
             <p className="text-xs text-muted-foreground">{m.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* AI Super Agent */}
+      <div className="glass rounded-2xl p-4 md:p-6 border border-primary/30">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
+              <Brain className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-display font-bold text-foreground">🧠 Super Agente IA</h3>
+              <p className="text-xs text-muted-foreground">Analiza conversaciones y sugiere estrategias</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={selectedCreator} onValueChange={setSelectedCreator}>
+              <SelectTrigger className="bg-muted border-border w-40">
+                <SelectValue placeholder="Todas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">📊 Todas</SelectItem>
+                {creators.map(c => (
+                  <SelectItem key={c.id} value={c.id}>👩 {c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button onClick={runAiAnalysis} disabled={aiLoading} className="gradient-primary text-white glow-rose">
+              {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              <span className="ml-1 hidden sm:inline">{aiLoading ? "Analizando..." : "Analizar"}</span>
+            </Button>
+          </div>
+        </div>
+
+        {aiAnalysis ? (
+          <div className="bg-secondary rounded-xl p-4 prose prose-sm prose-invert max-w-none text-foreground">
+            <ReactMarkdown>{aiAnalysis}</ReactMarkdown>
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <Brain className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-30" />
+            <p className="text-sm text-muted-foreground">Presiona "Analizar" para obtener insights de IA</p>
+            <p className="text-xs text-muted-foreground mt-1">Puedes filtrar por creadora individual o analizar toda la agencia</p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -88,23 +158,6 @@ export default function AnalyticsPage() {
               ))}
             </div>
           )}
-        </div>
-      </div>
-
-      <div className="glass rounded-2xl p-4 border border-primary/20">
-        <h3 className="font-display font-bold text-foreground mb-4">🤖 Recomendaciones</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {[
-            { icon: "🕐", title: "Mejor horario", desc: "Publica entre 7-9pm para mayor engagement" },
-            { icon: "💬", title: "Estilo", desc: "Mensajes cortos con emojis tienen 40% más respuesta" },
-            { icon: "💰", title: "Monetización", desc: "Introduce premium después de 5-7 mensajes de rapport" },
-          ].map(r => (
-            <div key={r.title} className="bg-secondary rounded-xl p-3">
-              <span className="text-xl mb-1 block">{r.icon}</span>
-              <p className="text-sm font-semibold text-foreground mb-1">{r.title}</p>
-              <p className="text-xs text-muted-foreground">{r.desc}</p>
-            </div>
-          ))}
         </div>
       </div>
     </div>
