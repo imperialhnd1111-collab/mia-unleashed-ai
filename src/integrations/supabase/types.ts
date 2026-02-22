@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_suggestions: {
+        Row: {
+          action_data: Json | null
+          category: string
+          created_at: string
+          description: string
+          id: string
+          implemented_at: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          action_data?: Json | null
+          category: string
+          created_at?: string
+          description: string
+          id?: string
+          implemented_at?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          action_data?: Json | null
+          category?: string
+          created_at?: string
+          description?: string
+          id?: string
+          implemented_at?: string | null
+          status?: string
+          title?: string
+        }
+        Relationships: []
+      }
       ai_logs: {
         Row: {
           action: string
@@ -582,6 +615,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      payment_settings: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          is_enabled: boolean
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
