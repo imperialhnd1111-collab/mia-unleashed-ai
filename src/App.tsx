@@ -16,6 +16,8 @@ import ChannelPage from "./pages/ChannelPage";
 import FansPage from "./pages/FansPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import BotPage from "./pages/BotPage";
+import PaymentsPage from "./pages/PaymentsPage";
+import PlatformAgentPage from "./pages/PlatformAgentPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -64,6 +66,8 @@ const App = () => {
             <Route path="/channel" element={<ProtectedRoute session={session}><ChannelPage /></ProtectedRoute>} />
             <Route path="/fans" element={<ProtectedRoute session={session}><FansPage /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute session={session}><AnalyticsPage /></ProtectedRoute>} />
+            <Route path="/payments" element={<ProtectedRoute session={session}><PaymentsPage /></ProtectedRoute>} />
+            <Route path="/agent" element={<ProtectedRoute session={session}><PlatformAgentPage /></ProtectedRoute>} />
             <Route path="/bot" element={<ProtectedRoute session={session}><BotPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute session={session}><DashboardPage /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />

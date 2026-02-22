@@ -147,7 +147,8 @@ serve(async (req) => {
     if (update.callback_query) {
       const cb = update.callback_query;
       const chatId = cb.message?.chat?.id;
-      const data = cb.data || "";
+      const cbData = cb.data || "";
+      const userId = String(cb.from?.id);
       
       try {
         await fetch(`https://api.telegram.org/bot${creatorBotToken}/answerCallbackQuery`, {
@@ -155,9 +156,87 @@ serve(async (req) => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ callback_query_id: cb.id }),
         });
-        
-        if (data.startsWith("pay_")) {
-          const methodIndex = parseInt(data.replace("pay_", ""));
+
+        // Get fan for this user
+        const { data: fanData } = await supabase.from("fans").select("id").eq("telegram_user_id", userId).eq("creator_id", creator.id).single();
+
+        if (cbData === "pay_wompi" || cbData === "pay_binance" || cbData === "pay_ton") {
+          const provider = cbData.replace("pay_", "");
+          const { data: setting } = await supabase.from("payment_settings").select("config").eq("provider", provider).single();
+          const config = setting?.config as any;
+
+          const amounts: Record<string, number> = { wompi: 10000, binance: 5, ton: 0.5 };
+          const currencies: Record<string, string> = { wompi: config?.currency || "COP", binance: config?.currency || "USDT", ton: "TON" };
+
+          const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+          const SUPABASE_ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
+          const payRes = await fetch(`${SUPABASE_URL}/functions/v1/process-payment`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_ANON}` },
+            body: JSON.stringify({
+              action: "create_link", provider,
+              amount: amounts[provider],
+              currency: currencies[provider],
+              creator_id: creator.id,
+              fan_id: fanData?.id || null,
+              purpose: "subscription",
+            }),
+          });
+          const payData = await payRes.json();
+
+          if (payData.url) {
+            const labels: Record<string, string> = {
+              wompi: "💳 Pagar ahora con Nequi/PSE",
+              binance: "🪙 Pagar con Binance Pay",
+              ton: "💎 Abrir wallet TON",
+            };
+            await sendTelegramMessage(creatorBotToken, chatId,
+              `✨ <b>Link de pago listo!</b>\n\nHaz clic abajo para completar tu pago 👇`,
+              { inline_keyboard: [[{ text: labels[provider] || "💳 Pagar", url: payData.url }]] }
+            );
+          } else {
+            await sendTelegramMessage(creatorBotToken, chatId, "❌ Error generando el pago, intenta de nuevo");
+          }
+        } else if (cbData === "pay_stars") {
+          // Telegram Stars invoice
+          await fetch(`https://api.telegram.org/bot${creatorBotToken}/sendInvoice`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chatId,
+              title: "⭐ Apoyo con Estrellas",
+              description: `Apoya a ${creator.name} con estrellas de Telegram 💖`,
+              payload: `stars_${Date.now()}_${userId}`,
+              provider_token: "",
+              currency: "XTR",
+              prices: [{ label: "⭐ Estrellas", amount: 50 }],
+            }),
+          });
+        } else if (cbData.startsWith("tip_")) {
+          const amount = parseInt(cbData.replace("tip_", ""));
+          const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+          const SUPABASE_ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
+          const payRes = await fetch(`${SUPABASE_URL}/functions/v1/process-payment`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_ANON}` },
+            body: JSON.stringify({
+              action: "create_link", provider: "wompi",
+              amount, currency: "COP",
+              creator_id: creator.id,
+              fan_id: fanData?.id || null,
+              purpose: "tip",
+            }),
+          });
+          const payData = await payRes.json();
+          if (payData.url) {
+            await sendTelegramMessage(creatorBotToken, chatId,
+              `💖 <b>Propina de $${amount.toLocaleString()}</b>\n\nGracias por tu generosidad! 🥰`,
+              { inline_keyboard: [[{ text: "💳 Completar propina", url: payData.url }]] }
+            );
+          }
+        } else if (cbData.startsWith("pay_")) {
+          // Legacy per-creator payment methods
+          const methodIndex = parseInt(cbData.replace("pay_", ""));
           const config = Array.isArray(creator.payment_methods_config) ? creator.payment_methods_config : [];
           const method = config[methodIndex] as any;
           if (method) {
@@ -329,24 +408,49 @@ PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natu
     await new Promise(resolve => setTimeout(resolve, Math.min(typingDelay, 4000)));
 
     // Check if user wants payment info
-    const wantsPayment = /pagar|pago|suscri|vip|precio|cuánto|cuanto|nequi|binance|comprar|contenido exclusivo|cómo me suscribo|como pago|método|metodo|enlace|link/i.test(userText);
+    const wantsPayment = /pagar|pago|suscri|vip|precio|cuánto|cuanto|nequi|binance|comprar|contenido exclusivo|cómo me suscribo|como pago|método|metodo|enlace|link|propina|tip|donar|dona/i.test(userText);
+    const wantsTip = /propina|tip|donar|dona|regalo|regalar|apoyar|apoyo|invitar|invitarte/i.test(userText);
     let replyMarkup = undefined;
 
-    if (wantsPayment) {
-      const payConfig = Array.isArray(creator.payment_methods_config) ? creator.payment_methods_config : [];
-      if (payConfig.length > 0) {
-        const buttons = (payConfig as any[]).map((m: any, i: number) => ([{
-          text: `${m.emoji || "💳"} ${m.name}`,
-          callback_data: `pay_${i}`,
-        }]));
-        if (creator.vip_channel_link) {
-          buttons.push([{ text: "🔥 Canal VIP", url: creator.vip_channel_link }] as any);
+    if (wantsPayment || wantsTip) {
+      // Get centralized payment settings
+      const { data: paymentMethods } = await supabase
+        .from("payment_settings")
+        .select("provider, config, is_enabled")
+        .eq("is_enabled", true);
+
+      const buttons: any[][] = [];
+
+      if (paymentMethods && paymentMethods.length > 0) {
+        for (const method of paymentMethods) {
+          const config = method.config as any;
+          if (method.provider === "wompi") {
+            buttons.push([{ text: "💳 Pagar con Nequi/PSE/Tarjeta", callback_data: "pay_wompi" }]);
+          } else if (method.provider === "binance") {
+            buttons.push([{ text: "🪙 Pagar con Crypto (Binance)", callback_data: "pay_binance" }]);
+          } else if (method.provider === "ton") {
+            buttons.push([{ text: "💎 Pagar con TON", callback_data: "pay_ton" }]);
+          } else if (method.provider === "telegram_stars") {
+            buttons.push([{ text: "⭐ Enviar Estrellas", callback_data: "pay_stars" }]);
+          }
         }
+      }
+
+      if (wantsTip) {
+        // Add quick tip amounts
+        buttons.push([
+          { text: "☕ $5.000", callback_data: "tip_5000" },
+          { text: "🌹 $10.000", callback_data: "tip_10000" },
+          { text: "💎 $25.000", callback_data: "tip_25000" },
+        ]);
+      }
+
+      if (creator.vip_channel_link) {
+        buttons.push([{ text: "🔥 Canal VIP Exclusivo", url: creator.vip_channel_link }]);
+      }
+
+      if (buttons.length > 0) {
         replyMarkup = { inline_keyboard: buttons };
-      } else if (creator.vip_channel_link) {
-        replyMarkup = {
-          inline_keyboard: [[{ text: "🔥 Ver contenido exclusivo", url: creator.vip_channel_link }]],
-        };
       }
     }
 
