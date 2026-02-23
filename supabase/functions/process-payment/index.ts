@@ -27,12 +27,10 @@ serve(async (req) => {
         });
       }
 
-      // Create Wompi payment link
       const amountInCents = Math.round((amount || 10000) * 100);
       const ref = reference || `tip_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
       const integrityString = `${ref}${amountInCents}${currency || "COP"}`;
-      // Simple hash for integrity (production should use HMAC-SHA256 with events secret)
       const encoder = new TextEncoder();
       const data = encoder.encode(integrityString + (Deno.env.get("WOMPI_EVENTS_SECRET") || ""));
       const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -41,7 +39,6 @@ serve(async (req) => {
 
       const checkoutUrl = `https://checkout.wompi.co/p/?public-key=${WOMPI_PUBLIC_KEY}&currency=${currency || "COP"}&amount-in-cents=${amountInCents}&reference=${ref}&signature%3Aintegrity=${integrityHash}`;
 
-      // Log the transaction
       await supabase.from("analytics_events").insert({
         creator_id: creator_id || "00000000-0000-0000-0000-000000000000",
         fan_id: fan_id || null,
@@ -58,7 +55,6 @@ serve(async (req) => {
     // ===== WOMPI: Webhook confirmation =====
     if (action === "wompi_webhook") {
       const { data: eventData } = await req.json();
-      // Verify signature with WOMPI_EVENTS_SECRET
       const transaction = eventData?.transaction;
       if (transaction?.status === "APPROVED") {
         await supabase.from("analytics_events").insert({
@@ -84,22 +80,24 @@ serve(async (req) => {
       }
 
       const orderRef = reference || `bp_${Date.now()}`;
-      // Binance Pay C2B API
       const timestamp = Date.now();
       const nonce = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
       const bodyPayload = {
         env: { terminalType: "WEB" },
         merchantTradeNo: orderRef,
-        orderAmount: amount || 5,
+        orderAmount: String(amount || 5),
         currency: currency || "USDT",
         description: purpose || "Propina",
         goodsType: "02",
       };
 
       const payloadStr = JSON.stringify(bodyPayload);
+      // Binance Pay signature: timestamp\nnonce\npayload\n
       const signStr = `${timestamp}\n${nonce}\n${payloadStr}\n`;
       const encoder = new TextEncoder();
-      const key = await crypto.subtle.importKey("raw", encoder.encode(BINANCE_API_KEY), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+      // Use BINANCE_SECRET_KEY for HMAC-SHA512 signing (the API key is the certificate SN)
+      const BINANCE_SECRET_KEY = Deno.env.get("BINANCE_SECRET_KEY") || BINANCE_API_KEY;
+      const key = await crypto.subtle.importKey("raw", encoder.encode(BINANCE_SECRET_KEY), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
       const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(signStr));
       const signature = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
 
@@ -116,6 +114,8 @@ serve(async (req) => {
       });
 
       const binanceData = await res.json();
+      console.log("Binance Pay response:", JSON.stringify(binanceData));
+
       if (binanceData.status === "SUCCESS") {
         await supabase.from("analytics_events").insert({
           creator_id: creator_id || "00000000-0000-0000-0000-000000000000",
@@ -133,7 +133,7 @@ serve(async (req) => {
         });
       }
 
-      return new Response(JSON.stringify({ error: binanceData.errorMessage || "Binance Pay error" }), {
+      return new Response(JSON.stringify({ error: binanceData.errorMessage || binanceData.code || "Binance Pay error", details: binanceData }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -155,7 +155,7 @@ serve(async (req) => {
           title: title || "⭐ Propina",
           description: desc || "Gracias por tu apoyo 💖",
           payload: `stars_${Date.now()}`,
-          provider_token: "", // Empty for Telegram Stars
+          provider_token: "",
           currency: "XTR",
           prices: [{ label: "⭐ Stars", amount: star_amount || 50 }],
         }),
@@ -182,8 +182,7 @@ serve(async (req) => {
         });
       }
 
-      // TON deep link
-      const tonAmount = amount || 1; // in TON
+      const tonAmount = amount || 1;
       const nanotons = Math.round(tonAmount * 1e9);
       const comment = purpose || "tip";
       const url = `ton://transfer/${walletAddress}?amount=${nanotons}&text=${encodeURIComponent(comment)}`;

@@ -566,6 +566,39 @@ export type Database = {
           },
         ]
       }
+      gift_items: {
+        Row: {
+          created_at: string
+          currency: string
+          emoji: string
+          id: string
+          is_active: boolean
+          name: string
+          price: number
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          currency?: string
+          emoji?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          price?: number
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          emoji?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          price?: number
+          sort_order?: number
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           content: string
@@ -642,6 +675,50 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      subscription_plans: {
+        Row: {
+          created_at: string
+          creator_id: string
+          currency: string
+          duration_months: number
+          id: string
+          is_active: boolean
+          name: string
+          price: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          currency?: string
+          duration_months?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          price?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          currency?: string
+          duration_months?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          price?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_plans_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

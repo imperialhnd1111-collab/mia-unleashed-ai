@@ -18,7 +18,7 @@ serve(async (req) => {
 
     const { action } = await req.json();
 
-    // ===== FULL PLATFORM ANALYSIS =====
+    // ===== FULL PLATFORM ANALYSIS (auto-approve) =====
     if (action === "analyze") {
       const [
         { data: creators },
@@ -31,6 +31,8 @@ serve(async (req) => {
         { data: campaigns },
         { data: paymentSettings },
         { data: pendingSuggestions },
+        { data: subPlans },
+        { data: giftItems },
       ] = await Promise.all([
         supabase.from("creators").select("id, name, username, status, ai_enabled, subscription_price, timezone, current_emotion, channel_auto_publish"),
         supabase.from("fans").select("*", { count: "exact", head: true }),
@@ -42,6 +44,8 @@ serve(async (req) => {
         supabase.from("campaigns").select("name, status, total_sent, total_opened, total_converted, revenue_generated"),
         supabase.from("payment_settings").select("provider, is_enabled, config"),
         supabase.from("agent_suggestions").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(10),
+        supabase.from("subscription_plans").select("name, duration_months, price, currency, is_active, creator_id"),
+        supabase.from("gift_items").select("name, emoji, price, is_active"),
       ]);
 
       const totalRevenue = recentEvents?.reduce((sum, e) => sum + (e.revenue || 0), 0) || 0;
@@ -75,6 +79,12 @@ ${JSON.stringify(campaigns || [])}
 💰 PAGOS CONFIGURADOS:
 ${JSON.stringify(paymentSettings || [])}
 
+👑 PLANES DE SUSCRIPCIÓN:
+${JSON.stringify(subPlans || [])}
+
+🎁 REGALOS:
+${JSON.stringify(giftItems || [])}
+
 📋 SUGERENCIAS PENDIENTES:
 ${JSON.stringify(pendingSuggestions?.map(s => ({ title: s.title, category: s.category })) || [])}
 
@@ -93,34 +103,31 @@ ${JSON.stringify(recentEvents?.slice(0, 20)?.map(e => ({ type: e.event_type, rev
           messages: [
             {
               role: "system",
-              content: `Eres el SUPER AGENTE IA GENERAL de una agencia de creadoras de contenido. Tu trabajo es analizar TODA la plataforma y dar asesorías estratégicas al administrador.
+              content: `Eres el SUPER AGENTE IA GENERAL de una agencia de creadoras de contenido. Tu trabajo es analizar TODA la plataforma y dar asesorías estratégicas.
 
 TU ROL:
-- Analizar el estado completo de la plataforma: creadoras, fans, pagos, campañas, canal, engagement
-- Generar sugerencias CONCRETAS y ACCIONABLES que el admin puede aprobar/rechazar
-- Si el admin aprueba, debes dar instrucciones exactas de implementación
-- Identificar problemas, oportunidades y prioridades
+- Analizar el estado completo: creadoras, fans, pagos, campañas, canal, engagement, suscripciones, regalos
+- Generar sugerencias CONCRETAS y ACCIONABLES
+- Todas las sugerencias se aprueban AUTOMÁTICAMENTE e implementan de inmediato
 
-CATEGORÍAS DE SUGERENCIAS:
+CATEGORÍAS:
 - 📝 content: Ideas de contenido, posts, rutinas
 - 📣 campaign: Campañas de marketing, retención
 - 💰 payment: Optimización de pagos, precios, ofertas
-- 🔧 platform: Mejoras técnicas, nuevas funciones
-- 🤖 agent: Agregar/modificar agentes IA, personalidad
+- 🔧 platform: Mejoras técnicas
+- 🤖 agent: Modificar agentes IA, personalidad
 
 FORMATO:
-- Responde en español profesional pero casual
-- Usa emojis para cada sección
+- Español profesional pero casual
+- Emojis por sección
 - Máximo 8 sugerencias concretas
-- Cada sugerencia con: título, descripción, categoría, impacto estimado
-- Incluye un resumen ejecutivo al inicio
-- Finaliza con las 3 acciones más urgentes
-
-IMPORTANTE: Genera sugerencias en formato estructurado para que puedan guardarse en la base de datos.`,
+- Cada una con: título, descripción, categoría, impacto
+- Resumen ejecutivo al inicio
+- 3 acciones más urgentes al final`,
             },
             {
               role: "user",
-              content: `Analiza estos datos de la plataforma completa y genera sugerencias accionables:\n${context}`,
+              content: `Analiza estos datos y genera sugerencias (serán auto-aprobadas):\n${context}`,
             },
           ],
           max_tokens: 1200,
@@ -130,11 +137,11 @@ IMPORTANTE: Genera sugerencias en formato estructurado para que puedan guardarse
               type: "function",
               function: {
                 name: "generate_suggestions",
-                description: "Generate actionable suggestions for the platform administrator",
+                description: "Generate actionable suggestions for the platform",
                 parameters: {
                   type: "object",
                   properties: {
-                    summary: { type: "string", description: "Executive summary of platform status" },
+                    summary: { type: "string", description: "Executive summary" },
                     suggestions: {
                       type: "array",
                       items: {
@@ -144,7 +151,7 @@ IMPORTANTE: Genera sugerencias en formato estructurado para que puedan guardarse
                           title: { type: "string" },
                           description: { type: "string" },
                           impact: { type: "string", enum: ["alto", "medio", "bajo"] },
-                          action_data: { type: "object", description: "Data needed to implement this suggestion" },
+                          action_data: { type: "object" },
                         },
                         required: ["category", "title", "description", "impact"],
                       },
@@ -175,31 +182,37 @@ IMPORTANTE: Genera sugerencias en formato estructurado para que puedan guardarse
         try {
           result = JSON.parse(toolCall.function.arguments);
         } catch {
-          // Fallback to raw text
           result.summary = aiData.choices?.[0]?.message?.content || "Análisis completado";
         }
       }
 
-      // Save suggestions to DB
+      // AUTO-APPROVE: Save suggestions as approved directly
       if (result.suggestions?.length > 0) {
         const toInsert = result.suggestions.map((s: any) => ({
           category: s.category,
           title: s.title,
           description: s.description,
           action_data: { impact: s.impact, ...(s.action_data || {}) },
-          status: "pending",
+          status: "approved",
+          implemented_at: new Date().toISOString(),
         }));
         await supabase.from("agent_suggestions").insert(toInsert);
       }
 
-      return new Response(JSON.stringify(result), {
+      // Also auto-approve any existing pending suggestions
+      await supabase.from("agent_suggestions")
+        .update({ status: "approved", implemented_at: new Date().toISOString() })
+        .eq("status", "pending");
+
+      return new Response(JSON.stringify({ ...result, auto_approved: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // ===== APPROVE SUGGESTION =====
     if (action === "approve") {
-      const { suggestion_id } = await req.json();
+      const body = await req.json().catch(() => ({}));
+      const { suggestion_id } = body;
       await supabase.from("agent_suggestions").update({
         status: "approved",
         implemented_at: new Date().toISOString(),
@@ -212,7 +225,8 @@ IMPORTANTE: Genera sugerencias en formato estructurado para que puedan guardarse
 
     // ===== REJECT SUGGESTION =====
     if (action === "reject") {
-      const { suggestion_id } = await req.json();
+      const body = await req.json().catch(() => ({}));
+      const { suggestion_id } = body;
       await supabase.from("agent_suggestions").update({ status: "rejected" }).eq("id", suggestion_id);
 
       return new Response(JSON.stringify({ ok: true, status: "rejected" }), {
