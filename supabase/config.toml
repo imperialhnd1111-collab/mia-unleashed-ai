@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.channel-ai]
 verify_jwt = false
+
+[functions.manage-subscriptions]
+verify_jwt = false
