@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.manage-subscriptions]
 verify_jwt = false
+
+[functions.content-manager]
+verify_jwt = false

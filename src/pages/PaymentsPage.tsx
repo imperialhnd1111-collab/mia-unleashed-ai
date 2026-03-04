@@ -306,7 +306,9 @@ export default function PaymentsPage() {
         {/* GIFTS */}
         <TabsContent value="gifts" className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Regalos — precio en USD, conversión automática</p>
+            <div>
+              <p className="text-sm text-muted-foreground">🎁 Catálogo de regalos premium — precio en USD</p>
+            </div>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={addGift} className="text-xs border-border">
                 <Plus className="w-3 h-3 mr-1" /> Agregar
@@ -317,57 +319,77 @@ export default function PaymentsPage() {
             </div>
           </div>
 
-          <div className="glass rounded-2xl p-5 border border-border">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {gifts.map(g => (
-                <div key={g.id} className="relative group bg-gradient-to-br from-muted/60 to-muted/20 rounded-2xl p-5 border border-border hover:border-primary/30 transition-all hover:shadow-lg hover:shadow-primary/5">
-                  {/* Premium badge */}
-                  <div className="absolute -top-2 -right-2 flex items-center gap-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {gifts.map((g, index) => {
+              const tierColors = g.price >= 100
+                ? "from-yellow-500/30 via-amber-500/20 to-orange-500/10 border-gold/50 shadow-[0_0_30px_hsl(40_90%_55%/0.15)]"
+                : g.price >= 30
+                ? "from-purple-500/20 via-pink-500/10 to-rose-500/10 border-primary/40 shadow-[0_0_25px_hsl(345_85%_55%/0.12)]"
+                : "from-blue-500/15 via-cyan-500/10 to-teal-500/5 border-blue-400/30";
+              const tierBadge = g.price >= 100 ? "👑 Legendario" : g.price >= 30 ? "💎 Premium" : g.price >= 10 ? "⭐ Especial" : "🎀 Básico";
+              return (
+                <div key={g.id} className={`relative group rounded-2xl p-5 border bg-gradient-to-br ${tierColors} transition-all duration-300 hover:scale-[1.02] hover:shadow-lg`}>
+                  {/* Controls */}
+                  <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Switch checked={g.is_active} onCheckedChange={v => updateGift(g.id, "is_active", v)} />
-                    <Button size="icon" variant="ghost" onClick={() => deleteGift(g.id)} className="h-6 w-6 text-destructive hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Trash2 className="w-3 h-3" />
+                    <Button size="icon" variant="ghost" onClick={() => deleteGift(g.id)} className="h-7 w-7 text-destructive hover:text-destructive">
+                      <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
 
-                  {/* Emoji display */}
-                  <div className="text-center mb-3">
-                    <div className="text-5xl mb-2 drop-shadow-lg">{g.emoji}</div>
-                    <Input value={g.emoji} onChange={e => updateGift(g.id, "emoji", e.target.value)} className="bg-transparent border-none text-center text-xs text-muted-foreground w-16 mx-auto h-6 p-0" />
+                  {/* Tier badge */}
+                  <div className="text-[10px] font-semibold text-muted-foreground mb-3 uppercase tracking-wider">{tierBadge}</div>
+
+                  {/* Emoji */}
+                  <div className="text-center mb-4">
+                    <div className="text-6xl mb-1 drop-shadow-2xl animate-[bounce_3s_ease-in-out_infinite]" style={{ animationDelay: `${index * 200}ms` }}>{g.emoji}</div>
+                    <Input value={g.emoji} onChange={e => updateGift(g.id, "emoji", e.target.value)} className="bg-transparent border-none text-center text-xs text-muted-foreground w-16 mx-auto h-5 p-0" />
                   </div>
 
                   {/* Name */}
-                  <div className="mb-3">
-                    <Input value={g.name} onChange={e => updateGift(g.id, "name", e.target.value)} className="bg-transparent border-border text-center font-semibold text-foreground text-sm h-8" />
+                  <Input value={g.name} onChange={e => updateGift(g.id, "name", e.target.value)} className="bg-transparent border-none text-center font-display font-bold text-foreground text-base h-8 mb-2" />
+
+                  {/* Price */}
+                  <div className="relative mx-auto w-32 mb-3">
+                    <DollarSign className="absolute left-2 top-2 w-4 h-4 text-gold" />
+                    <Input type="number" value={g.price} onChange={e => updateGift(g.id, "price", parseFloat(e.target.value) || 0)} className="bg-muted/40 border-gold/30 text-center font-bold text-xl h-10 text-gold pl-7 rounded-xl" />
                   </div>
 
-                  {/* Price USD */}
-                  <div className="mb-2">
-                    <div className="relative">
-                      <DollarSign className="absolute left-2 top-1.5 w-3.5 h-3.5 text-gold" />
-                      <Input type="number" value={g.price} onChange={e => updateGift(g.id, "price", parseFloat(e.target.value) || 0)} className="bg-background/50 border-border text-center font-bold text-lg h-9 text-gold pl-7" />
+                  {/* Conversions */}
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <div className="bg-muted/30 rounded-lg px-2 py-1.5 flex items-center justify-between">
+                      <span className="text-muted-foreground">💳</span>
+                      <span className="text-foreground font-medium">{convertUSD(g.price, "COP")}</span>
+                    </div>
+                    <div className="bg-muted/30 rounded-lg px-2 py-1.5 flex items-center justify-between">
+                      <span className="text-muted-foreground">🪙</span>
+                      <span className="text-foreground font-medium">{convertUSD(g.price, "USDT")}</span>
+                    </div>
+                    <div className="bg-muted/30 rounded-lg px-2 py-1.5 flex items-center justify-between">
+                      <span className="text-muted-foreground">💎</span>
+                      <span className="text-foreground font-medium">{convertUSD(g.price, "TON")}</span>
+                    </div>
+                    <div className="bg-muted/30 rounded-lg px-2 py-1.5 flex items-center justify-between">
+                      <span className="text-muted-foreground">⭐</span>
+                      <span className="text-foreground font-medium">{convertUSD(g.price, "XTR")}</span>
                     </div>
                   </div>
 
-                  {/* Auto conversions */}
-                  <div className="space-y-1 text-xs text-muted-foreground text-center">
-                    <div className="flex justify-between px-1">
-                      <span>💳 COP</span><span>{convertUSD(g.price, "COP")}</span>
+                  {!g.is_active && (
+                    <div className="absolute inset-0 bg-background/60 rounded-2xl flex items-center justify-center">
+                      <span className="text-xs text-muted-foreground font-medium">Desactivado</span>
                     </div>
-                    <div className="flex justify-between px-1">
-                      <span>🪙 USDT</span><span>{convertUSD(g.price, "USDT")}</span>
-                    </div>
-                    <div className="flex justify-between px-1">
-                      <span>💎 TON</span><span>{convertUSD(g.price, "TON")}</span>
-                    </div>
-                    <div className="flex justify-between px-1">
-                      <span>⭐ Stars</span><span>{convertUSD(g.price, "XTR")}</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
-            {gifts.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">Sin regalos configurados</p>}
+              );
+            })}
           </div>
+          {gifts.length === 0 && (
+            <div className="glass rounded-2xl p-8 text-center border border-border">
+              <span className="text-4xl">🎁</span>
+              <p className="text-sm text-muted-foreground mt-2">Sin regalos configurados — agrega uno para empezar</p>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 

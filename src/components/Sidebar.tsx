@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Users, Image, Megaphone, BarChart3,
   Bot, Settings, LogOut, ChevronLeft, ChevronRight, Sparkles, Radio, Menu, X,
-  CreditCard, Brain
+  CreditCard, Brain, CalendarDays
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ const navItems = [
   { to: "/fans", icon: Users, label: "Fans" },
   { to: "/analytics", icon: BarChart3, label: "Analytics" },
   { to: "/payments", icon: CreditCard, label: "Pagos" },
+  { to: "/calendar", icon: CalendarDays, label: "Calendario" },
   { to: "/agent", icon: Brain, label: "Agente IA" },
   { to: "/bot", icon: Bot, label: "Bot AI" },
   { to: "/settings", icon: Settings, label: "Ajustes" },
