@@ -74,7 +74,7 @@ REGLAS:
 - Los fines de semana incluir contenido más casual y personal
 - Responde SOLO con JSON válido, sin texto adicional`;
 
-    const aiRes = await fetch("https://api.lovable.dev/v1/chat/completions", {
+    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("LOVABLE_API_KEY")}` },
       body: JSON.stringify({
@@ -85,7 +85,9 @@ REGLAS:
       }),
     });
 
-    const aiData = await aiRes.json();
+    const aiText = await aiRes.text();
+    let aiData: any = {};
+    try { aiData = JSON.parse(aiText); } catch { throw new Error("AI response not valid JSON: " + aiText.substring(0, 200)); }
     const content = aiData.choices?.[0]?.message?.content || "";
     
     // Parse JSON from response
