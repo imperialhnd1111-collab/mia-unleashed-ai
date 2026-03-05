@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session } from "@supabase/supabase-js";
+import { useIsMobile } from "@/hooks/use-mobile";
 import AuthPage from "./pages/AuthPage";
 import DashboardLayout from "./components/DashboardLayout";
 import DashboardPage from "./pages/DashboardPage";
@@ -19,9 +20,20 @@ import BotPage from "./pages/BotPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import PlatformAgentPage from "./pages/PlatformAgentPage";
 import CalendarPage from "./pages/CalendarPage";
+import InstallPrompt from "./components/InstallPrompt";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+function useIsStandalone() {
+  const [standalone, setStandalone] = useState(false);
+  useEffect(() => {
+    const isStandalone = window.matchMedia("(display-mode: standalone)").matches
+      || (navigator as any).standalone === true;
+    setStandalone(isStandalone);
+  }, []);
+  return standalone;
+}
 
 function ProtectedRoute({ children, session }: { children: React.ReactNode; session: Session | null }) {
   if (!session) return <Navigate to="/auth" replace />;
@@ -31,6 +43,8 @@ function ProtectedRoute({ children, session }: { children: React.ReactNode; sess
 const App = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const isMobile = useIsMobile();
+  const isStandalone = useIsStandalone();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -49,6 +63,19 @@ const App = () => {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
       </div>
+    );
+  }
+
+  // Show install prompt on mobile if not running as installed PWA
+  if (isMobile && !isStandalone) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <InstallPrompt />
+        </TooltipProvider>
+      </QueryClientProvider>
     );
   }
 

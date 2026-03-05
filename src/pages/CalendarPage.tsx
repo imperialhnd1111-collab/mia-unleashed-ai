@@ -3,10 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Brain, Sparkles, Instagram, Radio, Hash, RefreshCw, Plus, Image, Video, FileText, Music } from "lucide-react";
+import { Loader2, Brain, Sparkles, Instagram, Radio, Hash, Plus, Image, Video, FileText, Music } from "lucide-react";
 import { toast } from "sonner";
-import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
+import ContentPlanDisplay from "@/components/ContentPlanDisplay";
 
 const PLATFORMS = [
   { id: "instagram", label: "Instagram", icon: Instagram, color: "bg-gradient-to-br from-purple-500 to-pink-500" },
@@ -221,17 +221,9 @@ export default function CalendarPage() {
             </div>
           )}
 
-          {/* AI Plan summary */}
-          {aiPlan && (
-            <div className="glass rounded-2xl p-5 border border-primary/30">
-              <div className="flex items-center gap-2 mb-3">
-                <Brain className="w-5 h-5 text-primary" />
-                <h3 className="font-display font-bold text-foreground">🧠 Estrategia del Manager IA</h3>
-              </div>
-              <div className="prose prose-sm prose-invert max-w-none text-foreground/90">
-                <ReactMarkdown>{aiPlan}</ReactMarkdown>
-              </div>
-            </div>
+          {/* AI Plan - New visual display */}
+          {(aiPlan || events.length > 0) && (
+            <ContentPlanDisplay plan={aiPlan} events={events} />
           )}
 
           {/* Empty state */}
