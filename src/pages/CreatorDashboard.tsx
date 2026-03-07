@@ -201,7 +201,7 @@ export default function CreatorDashboard({ session }: { session: Session }) {
             <p>🤖 Bot: <span className="text-foreground font-mono text-xs">@{creator.telegram_bot_username || "sin configurar"}</span></p>
             <p>📡 Canal: <span className="text-foreground font-mono text-xs">{creator.telegram_channel_id || "sin configurar"}</span></p>
             <p>🧠 IA: <span className="text-primary">{creator.ai_enabled ? "Activa" : "Inactiva"}</span></p>
-            <p>💰 Comisión plataforma: <span className="text-amber-400">15%</span></p>
+            <p>💰 Comisión plataforma: <span className="text-primary">15%</span></p>
           </div>
         </div>
       </div>
