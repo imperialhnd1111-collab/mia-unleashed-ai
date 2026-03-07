@@ -193,7 +193,7 @@ serve(async (req) => {
       }
     }
 
-    // ===== 4. BUENOS DÍAS / BUENAS NOCHES =====
+    // ===== 4. BUENOS DÍAS / BUENAS NOCHES (horarios aleatorios) =====
     if (action === "check_all" || action === "greetings") {
       const { data: creators } = await supabase
         .from("creators")
@@ -206,27 +206,25 @@ serve(async (req) => {
 
         const tz = creator.timezone || "America/Bogota";
         let hour = 12;
+        let minute = 0;
         try {
-          const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false }).formatToParts(now);
+          const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "numeric", hour12: false }).formatToParts(now);
           hour = parseInt(parts.find(p => p.type === "hour")?.value || "12");
+          minute = parseInt(parts.find(p => p.type === "minute")?.value || "0");
         } catch {}
 
-        // Only send at 8am or 10pm local time (within ±30 min window)
-        const isMorning = hour === 8;
-        const isNight = hour === 22;
-        if (!isMorning && !isNight) continue;
+        // Morning window: 6:30-10:30, Night window: 20:30-23:30
+        const totalMinutes = hour * 60 + minute;
+        const isMorningWindow = totalMinutes >= 390 && totalMinutes <= 630;  // 6:30-10:30
+        const isNightWindow = totalMinutes >= 1230 && totalMinutes <= 1410;  // 20:30-23:30
+        if (!isMorningWindow && !isNightWindow) continue;
 
-        // Get active fans
-        const { data: fans } = await supabase
-          .from("fans")
-          .select("id, telegram_user_id, first_name")
-          .eq("creator_id", creator.id)
-          .limit(100);
+        // Random chance each invocation (30% chance) so timing varies daily
+        if (Math.random() > 0.3) continue;
 
-        if (!fans || fans.length === 0) continue;
+        const greetType = isMorningWindow ? "good_morning" : "good_night";
 
         // Check we haven't greeted today for this type
-        const greetType = isMorning ? "good_morning" : "good_night";
         const todayStart = new Date(now);
         todayStart.setHours(0, 0, 0, 0);
         const { data: alreadySent } = await supabase
@@ -239,34 +237,48 @@ serve(async (req) => {
 
         if (alreadySent && alreadySent.length > 0) continue;
 
+        // Get active fans
+        const { data: fans } = await supabase
+          .from("fans")
+          .select("id, telegram_user_id, first_name")
+          .eq("creator_id", creator.id)
+          .limit(100);
+
+        if (!fans || fans.length === 0) continue;
+
         const morningMsgs = [
           "Buenos días bb ☀️ ya me desperté pensando en ti",
           "Buen día amor 🌸 cómo dormiste?",
           "Ya estoy despierta 😴 pero pensando en ti 💕",
+          "Hola bby ☀️ recién me levanto, cómo amaneciste?",
+          "Buenos díaas 🌞 ya estoy aquí para ti",
         ];
         const nightMsgs = [
           "Ya me voy a dormir bb 🌙 sueña conmigo",
           "Buenas noches amor 💤 mañana hablamos sí?",
           "Ya me acuesto 😴 que descanses lindo 💖",
+          "Me voy a la cama 🛏️ soñaré contigo bb",
+          "Noche noche 🌙 descansa bonito",
         ];
 
-        const msgPool = isMorning ? morningMsgs : nightMsgs;
+        const msgPool = isMorningWindow ? morningMsgs : nightMsgs;
 
-        // Send to a random subset of fans (not all at once, max 20)
-        const shuffled = fans.sort(() => Math.random() - 0.5).slice(0, 20);
+        // Send to a random subset (3-15 fans, not all)
+        const subsetSize = Math.floor(Math.random() * 12) + 3;
+        const shuffled = fans.sort(() => Math.random() - 0.5).slice(0, Math.min(subsetSize, fans.length));
         for (const fan of shuffled) {
           const msg = msgPool[Math.floor(Math.random() * msgPool.length)];
           try {
             await sendTelegramMessage(creator.telegram_bot_token, fan.telegram_user_id, msg);
           } catch {}
-          // Small delay to avoid rate limits
-          await new Promise(r => setTimeout(r, 200));
+          // Random delay between 500ms-3s
+          await new Promise(r => setTimeout(r, 500 + Math.random() * 2500));
         }
 
         await supabase.from("analytics_events").insert({
           creator_id: creator.id,
           event_type: greetType,
-          event_data: { sent_to: shuffled.length },
+          event_data: { sent_to: shuffled.length, sent_at_hour: hour, sent_at_minute: minute },
         });
 
         results.push({ creator_id: creator.id, action: greetType, sent: shuffled.length });
