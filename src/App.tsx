@@ -7,7 +7,11 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session } from "@supabase/supabase-js";
 import { useIsMobile } from "@/hooks/use-mobile";
+
+import LandingPage from "./pages/LandingPage";
 import AuthPage from "./pages/AuthPage";
+import RegisterPage from "./pages/RegisterPage";
+import CreatorDashboard from "./pages/CreatorDashboard";
 import DashboardLayout from "./components/DashboardLayout";
 import DashboardPage from "./pages/DashboardPage";
 import CreatorsPage from "./pages/CreatorsPage";
@@ -43,20 +47,42 @@ function ProtectedRoute({ children, session }: { children: React.ReactNode; sess
 const App = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<"admin" | "creator" | null>(null);
   const isMobile = useIsMobile();
   const isStandalone = useIsStandalone();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      setLoading(false);
+      if (session) {
+        fetchRole(session.user.id);
+      } else {
+        setUserRole(null);
+        setLoading(false);
+      }
     });
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setLoading(false);
+      if (session) {
+        fetchRole(session.user.id);
+      } else {
+        setLoading(false);
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  const fetchRole = async (userId: string) => {
+    const { data } = await supabase.from("user_roles").select("role").eq("user_id", userId);
+    if (data && data.length > 0) {
+      const roles = data.map((r: any) => r.role);
+      setUserRole(roles.includes("admin") ? "admin" : "creator");
+    } else {
+      // No role found = admin (legacy users)
+      setUserRole("admin");
+    }
+    setLoading(false);
+  };
 
   if (loading) {
     return (
@@ -66,8 +92,8 @@ const App = () => {
     );
   }
 
-  // Show install prompt on mobile if not running as installed PWA
-  if (isMobile && !isStandalone) {
+  // Mobile PWA gate (only for admin)
+  if (isMobile && !isStandalone && session && userRole === "admin") {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
@@ -86,8 +112,19 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <Routes>
+            {/* Public */}
+            <Route path="/landing" element={session ? <Navigate to="/" replace /> : <LandingPage />} />
+            <Route path="/register" element={session ? <Navigate to="/" replace /> : <RegisterPage />} />
             <Route path="/auth" element={session ? <Navigate to="/" replace /> : <AuthPage />} />
-            <Route path="/" element={<ProtectedRoute session={session}><DashboardPage /></ProtectedRoute>} />
+
+            {/* Root: admin → dashboard, creator → creator panel, no session → landing */}
+            <Route path="/" element={
+              !session ? <Navigate to="/landing" replace /> :
+              userRole === "admin" ? <ProtectedRoute session={session}><DashboardPage /></ProtectedRoute> :
+              <CreatorDashboard session={session} />
+            } />
+
+            {/* Admin routes */}
             <Route path="/creators" element={<ProtectedRoute session={session}><CreatorsPage /></ProtectedRoute>} />
             <Route path="/content" element={<ProtectedRoute session={session}><ContentPage /></ProtectedRoute>} />
             <Route path="/campaigns" element={<ProtectedRoute session={session}><CampaignsPage /></ProtectedRoute>} />

@@ -123,18 +123,16 @@ serve(async (req) => {
       }
     }
 
-    // Find creator
-    let creator: any = null;
-    if (botToken) {
-      const { data } = await supabase.from("creators").select("*").eq("telegram_bot_token", botToken).eq("ai_enabled", true).eq("status", "active").single();
-      creator = data;
+    // Find creator STRICTLY by bot token - ensures AI isolation per creator
+    if (!botToken) {
+      console.error("No bot token in webhook URL");
+      return new Response("ok", { status: 200 });
     }
+    const { data: creator } = await supabase.from("creators").select("*").eq("telegram_bot_token", botToken).eq("ai_enabled", true).eq("status", "active").single();
     if (!creator) {
-      const { data: creators } = await supabase.from("creators").select("*").eq("ai_enabled", true).eq("status", "active");
-      if (creators && creators.length === 1) creator = creators[0];
-      else return new Response("ok", { status: 200 });
+      console.error("No active creator found for token:", botToken.slice(0, 10) + "...");
+      return new Response("ok", { status: 200 });
     }
-    if (!creator) return new Response("ok", { status: 200 });
     const creatorBotToken = creator.telegram_bot_token;
     if (!creatorBotToken) return new Response("ok", { status: 200 });
 
