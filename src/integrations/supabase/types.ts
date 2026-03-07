@@ -676,6 +676,56 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          agency_name: string | null
+          avatar_url: string | null
+          commission_rate: number | null
+          created_at: string | null
+          creator_id: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          onboarding_complete: boolean | null
+          telegram_username: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          agency_name?: string | null
+          avatar_url?: string | null
+          commission_rate?: number | null
+          created_at?: string | null
+          creator_id?: string | null
+          email?: string | null
+          full_name?: string | null
+          id: string
+          onboarding_complete?: boolean | null
+          telegram_username?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          agency_name?: string | null
+          avatar_url?: string | null
+          commission_rate?: number | null
+          created_at?: string | null
+          creator_id?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          onboarding_complete?: boolean | null
+          telegram_username?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscription_plans: {
         Row: {
           created_at: string
@@ -720,14 +770,39 @@ export type Database = {
           },
         ]
       }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
+      app_role: "admin" | "creator"
       campaign_status: "draft" | "active" | "paused" | "completed"
       content_status: "draft" | "scheduled" | "published" | "failed"
       content_type: "photo" | "video" | "audio" | "text"
@@ -870,6 +945,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: ["admin", "creator"],
       campaign_status: ["draft", "active", "paused", "completed"],
       content_status: ["draft", "scheduled", "published", "failed"],
       content_type: ["photo", "video", "audio", "text"],
