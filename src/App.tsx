@@ -25,6 +25,7 @@ import PaymentsPage from "./pages/PaymentsPage";
 import PlatformAgentPage from "./pages/PlatformAgentPage";
 import CalendarPage from "./pages/CalendarPage";
 import InstallPrompt from "./components/InstallPrompt";
+import MonitoringPage from "./pages/MonitoringPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
