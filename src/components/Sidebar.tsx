@@ -22,6 +22,7 @@ const navItems = [
   { to: "/calendar", icon: CalendarDays, label: "Calendario" },
   { to: "/agent", icon: Brain, label: "Agente IA" },
   { to: "/bot", icon: Bot, label: "Bot AI" },
+  { to: "/monitoring", icon: Shield, label: "Monitoreo" },
   { to: "/settings", icon: Settings, label: "Ajustes" },
 ];
 

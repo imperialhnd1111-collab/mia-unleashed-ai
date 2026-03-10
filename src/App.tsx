@@ -136,6 +136,7 @@ const App = () => {
             <Route path="/calendar" element={<ProtectedRoute session={session}><CalendarPage /></ProtectedRoute>} />
             <Route path="/agent" element={<ProtectedRoute session={session}><PlatformAgentPage /></ProtectedRoute>} />
             <Route path="/bot" element={<ProtectedRoute session={session}><BotPage /></ProtectedRoute>} />
+            <Route path="/monitoring" element={<ProtectedRoute session={session}><MonitoringPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute session={session}><DashboardPage /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
