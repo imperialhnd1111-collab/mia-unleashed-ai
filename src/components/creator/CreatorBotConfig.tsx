@@ -43,7 +43,7 @@ export default function CreatorBotConfig({ creator, onUpdate }: Props) {
       // Register webhook if token provided
       if (form.telegram_bot_token && form.telegram_bot_token !== creator.telegram_bot_token) {
         try {
-          const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/telegram-webhook/${form.telegram_bot_token}`;
+          const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/telegram-webhook?token=${encodeURIComponent(form.telegram_bot_token)}`;
           const tgResp = await fetch(`https://api.telegram.org/bot${form.telegram_bot_token}/setWebhook`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
