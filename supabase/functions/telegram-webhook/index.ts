@@ -15,12 +15,77 @@ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 const processedUpdates = new Set<number>();
 
+// ===== ERROR MONITORING =====
+async function logBotError(
+  creatorId: string,
+  errorType: string,
+  errorMessage: string,
+  severity: "warning" | "error" | "critical",
+  context: Record<string, unknown> = {},
+  fanId?: string,
+) {
+  try {
+    await supabase.from("bot_errors").insert({
+      creator_id: creatorId,
+      fan_id: fanId || null,
+      error_type: errorType,
+      error_message: errorMessage,
+      severity,
+      error_context: context,
+    });
+
+    // Send Telegram alert to admin for critical/error severity
+    if (severity === "critical" || severity === "error") {
+      await sendAdminAlert(creatorId, errorType, errorMessage, severity);
+    }
+  } catch (e) {
+    console.error("Failed to log bot error:", e);
+  }
+}
+
+async function sendAdminAlert(creatorId: string, errorType: string, errorMessage: string, severity: string) {
+  try {
+    // Get all creators with admin bot tokens to send alerts
+    const { data: creator } = await supabase.from("creators").select("name, username").eq("id", creatorId).single();
+    const creatorName = creator?.name || "Desconocido";
+
+    // Find admin's Telegram chat - use first creator with a bot token as alert channel
+    const { data: adminCreators } = await supabase.from("creators")
+      .select("telegram_bot_token, telegram_channel_id")
+      .not("telegram_bot_token", "is", null)
+      .not("telegram_channel_id", "is", null)
+      .limit(1);
+
+    if (adminCreators && adminCreators.length > 0) {
+      const admin = adminCreators[0];
+      const icon = severity === "critical" ? "🚨" : "⚠️";
+      const alertMsg = `${icon} <b>Bot Error (${severity.toUpperCase()})</b>\n\n` +
+        `👤 Creadora: ${creatorName}\n` +
+        `📋 Tipo: <code>${errorType}</code>\n` +
+        `💬 ${errorMessage.slice(0, 200)}\n` +
+        `🕐 ${new Date().toLocaleString("es-CO", { timeZone: "America/Bogota" })}`;
+
+      await fetch(`https://api.telegram.org/bot${admin.telegram_bot_token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: admin.telegram_channel_id,
+          text: alertMsg,
+          parse_mode: "HTML",
+        }),
+      });
+    }
+  } catch (e) {
+    console.error("Failed to send admin alert:", e);
+  }
+}
+
 // ===== CURRENCY CONVERSION (USD base) =====
 const RATES: Record<string, number> = {
   COP: 4200,
   USDT: 1,
-  TON: 0.3,   // 1 USD ≈ 0.3 TON
-  XTR: 50,    // 1 USD ≈ 50 Stars
+  TON: 0.3,
+  XTR: 50,
 };
 
 function convertUSD(usd: number, toCurrency: string): number {
@@ -48,10 +113,15 @@ async function sendTypingAction(botToken: string, chatId: number) {
 async function sendTelegramMessage(botToken: string, chatId: number, text: string, replyMarkup?: any) {
   const body: any = { chat_id: chatId, text, parse_mode: "HTML" };
   if (replyMarkup) body.reply_markup = replyMarkup;
-  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  const data = await res.json();
+  if (!data.ok) {
+    throw new Error(`Telegram sendMessage failed: ${data.description || "unknown"}`);
+  }
+  return data;
 }
 
 function humanizeDelay(text: string): number {
@@ -107,6 +177,8 @@ async function getPaymentButtons(usdAmount: number, purpose: string, creatorId: 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const startTime = Date.now();
+
   try {
     const url = new URL(req.url);
     const botToken = url.searchParams.get("token");
@@ -123,13 +195,14 @@ serve(async (req) => {
       }
     }
 
-    // Find creator STRICTLY by bot token - ensures AI isolation per creator
+    // Find creator STRICTLY by bot token
     if (!botToken) {
       console.error("No bot token in webhook URL");
       return new Response("ok", { status: 200 });
     }
-    const { data: creator } = await supabase.from("creators").select("*").eq("telegram_bot_token", botToken).eq("ai_enabled", true).eq("status", "active").single();
-    if (!creator) {
+    const { data: creator, error: creatorError } = await supabase.from("creators").select("*").eq("telegram_bot_token", botToken).eq("ai_enabled", true).eq("status", "active").single();
+    
+    if (creatorError || !creator) {
       console.error("No active creator found for token:", botToken.slice(0, 10) + "...");
       return new Response("ok", { status: 200 });
     }
@@ -183,10 +256,9 @@ serve(async (req) => {
             );
           }
         }
-        // ===== PROCESS PAYMENT (generic: pay_{purpose}_{provider}_{usdAmount}) =====
+        // ===== PROCESS PAYMENT =====
         else if (cbData.startsWith("pay_")) {
           const parts = cbData.split("_");
-          // pay_sub_{planId}_{provider}_{usdAmount} or pay_gift_{giftId}_{provider}_{usdAmount} or pay_tip_{provider}_{usdAmount}
           const provider = parts[parts.length - 2];
           const usdAmount = parseFloat(parts[parts.length - 1]);
           const purpose = parts.slice(1, parts.length - 2).join("_");
@@ -198,7 +270,7 @@ serve(async (req) => {
               body: JSON.stringify({
                 chat_id: chatId,
                 title: `⭐ Pago - $${usdAmount} USD`,
-                description: `Pago a ${creator.name} 💖`,
+                description: `Pago a ${creator.name}`,
                 payload: `${purpose}_${userId}_${Date.now()}`,
                 provider_token: "",
                 currency: "XTR",
@@ -217,6 +289,7 @@ serve(async (req) => {
                 { inline_keyboard: [[{ text: labels[provider] || "💳 Pagar", url: payData.url }]] }
               );
             } else {
+              await logBotError(creator.id, "payment_link_failed", `No se pudo generar link de pago: ${provider}`, "error", { provider, usdAmount, purpose }, fanData?.id);
               await sendTelegramMessage(creatorBotToken, chatId, "❌ Error generando pago, intenta de nuevo");
             }
           }
@@ -276,7 +349,10 @@ serve(async (req) => {
             { inline_keyboard: buttons }
           );
         }
-      } catch (e) { console.error("Callback error:", e); }
+      } catch (e: any) {
+        console.error("Callback error:", e);
+        await logBotError(creator.id, "callback_error", e.message || String(e), "error", { callback_data: cbData, chat_id: chatId });
+      }
       return new Response("ok", { status: 200 });
     }
 
@@ -295,7 +371,6 @@ serve(async (req) => {
       const userId = String(update.message.from?.id);
       const payload = payment.invoice_payload || "";
 
-      // If it's a subscription payment, activate it
       if (payload.startsWith("sub_")) {
         const planIdMatch = payload.match(/^sub_([a-f0-9-]+)_/);
         if (planIdMatch) {
@@ -309,7 +384,6 @@ serve(async (req) => {
               subscription_expires_at: expiresAt.toISOString(),
             }).eq("telegram_user_id", userId).eq("creator_id", creator.id);
 
-            // Send VIP link
             if (creator.vip_channel_link) {
               await sendTelegramMessage(creatorBotToken, update.message.chat.id,
                 `🎉 <b>¡Suscripción activada!</b>\n\n👑 Plan: ${plan.name}\n📅 Hasta: ${expiresAt.toLocaleDateString("es-CO")}\n\nÚnete a mi canal VIP 👇`,
@@ -360,13 +434,13 @@ serve(async (req) => {
       return new Response("ok", { status: 200 });
     }
 
-    // Handle /start command with subscription activation
+    // Handle /start command
     if (userText.startsWith("/start")) {
       // Continue to normal flow (upsert fan + AI response)
     }
 
     // Upsert fan
-    const { data: fan } = await supabase
+    const { data: fan, error: fanError } = await supabase
       .from("fans")
       .upsert({
         creator_id: creator.id,
@@ -380,10 +454,13 @@ serve(async (req) => {
       .select()
       .single();
 
-    if (!fan) return new Response("ok", { status: 200 });
+    if (fanError || !fan) {
+      await logBotError(creator.id, "fan_upsert_failed", fanError?.message || "Fan upsert returned null", "critical", { telegramUserId, username });
+      return new Response("ok", { status: 200 });
+    }
 
     // Upsert conversation
-    const { data: conversation } = await supabase
+    const { data: conversation, error: convError } = await supabase
       .from("conversations")
       .upsert({
         creator_id: creator.id,
@@ -393,16 +470,23 @@ serve(async (req) => {
       .select()
       .single();
 
-    if (!conversation) return new Response("ok", { status: 200 });
+    if (convError || !conversation) {
+      await logBotError(creator.id, "conversation_upsert_failed", convError?.message || "Conversation upsert returned null", "critical", { fanId: fan.id }, fan.id);
+      return new Response("ok", { status: 200 });
+    }
 
     // Save user message
-    await supabase.from("messages").insert({
+    const { error: msgError } = await supabase.from("messages").insert({
       conversation_id: conversation.id,
       role: "user",
       content: userText,
       telegram_message_id: telegramMessageId,
       sent_at: new Date().toISOString(),
     });
+
+    if (msgError) {
+      await logBotError(creator.id, "message_save_failed", msgError.message, "error", { conversation_id: conversation.id }, fan.id);
+    }
 
     // Get history
     const { data: history } = await supabase
@@ -438,6 +522,7 @@ REGLAS: MÁXIMO 1-2 oraciones. Como WhatsApp real. Emojis 0-2 max. PROHIBIDO ast
 
 PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natural y breve.`;
 
+    const aiStartTime = Date.now();
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
@@ -448,9 +533,20 @@ PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natu
         temperature: 1.0,
       }),
     });
+    const aiLatency = Date.now() - aiStartTime;
 
     if (!aiResponse.ok) {
-      console.error("AI error:", aiResponse.status, await aiResponse.text());
+      const errBody = await aiResponse.text();
+      console.error("AI error:", aiResponse.status, errBody);
+      await logBotError(creator.id, "ai_response_failed", `AI API returned ${aiResponse.status}: ${errBody.slice(0, 300)}`, "critical", {
+        status: aiResponse.status,
+        latency_ms: aiLatency,
+        fan_name: firstName,
+      }, fan.id);
+      // Send fallback message
+      try {
+        await sendTelegramMessage(creatorBotToken, chatId, "Ahora no puedo responder, escríbeme en un ratico 💕");
+      } catch { /* ignore */ }
       return new Response("ok", { status: 200 });
     }
 
@@ -460,6 +556,15 @@ PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natu
     if (replyText.length > 160) {
       const cutoff = replyText.lastIndexOf(" ", 140);
       replyText = replyText.slice(0, cutoff > 50 ? cutoff : 140);
+    }
+
+    // Log slow responses as warnings
+    if (aiLatency > 8000) {
+      await logBotError(creator.id, "slow_ai_response", `IA tardó ${aiLatency}ms en responder`, "warning", {
+        latency_ms: aiLatency,
+        tokens: aiData.usage?.total_tokens,
+        fan_name: firstName,
+      }, fan.id);
     }
 
     const typingDelay = humanizeDelay(replyText);
@@ -490,7 +595,17 @@ PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natu
       ]};
     }
 
-    await sendTelegramMessage(creatorBotToken, chatId, replyText, replyMarkup);
+    // Send message with error monitoring
+    try {
+      await sendTelegramMessage(creatorBotToken, chatId, replyText, replyMarkup);
+    } catch (sendErr: any) {
+      await logBotError(creator.id, "telegram_send_failed", sendErr.message || String(sendErr), "critical", {
+        chat_id: chatId,
+        reply_length: replyText.length,
+        fan_name: firstName,
+      }, fan.id);
+      return new Response("ok", { status: 200 });
+    }
 
     // Save assistant message
     await supabase.from("messages").insert({
@@ -508,11 +623,12 @@ PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natu
       message_count: (conversation.message_count || 0) + 2,
     }).eq("id", conversation.id);
 
-    // Log analytics
+    // Log analytics with latency
+    const totalLatency = Date.now() - startTime;
     await supabase.from("analytics_events").insert({
       creator_id: creator.id, fan_id: fan.id,
       event_type: "message_sent",
-      event_data: { user_message: userText.slice(0, 100), ai_tokens: aiData.usage?.total_tokens },
+      event_data: { user_message: userText.slice(0, 100), ai_tokens: aiData.usage?.total_tokens, ai_latency_ms: aiLatency, total_latency_ms: totalLatency },
     });
 
     // Random emotion shift
@@ -524,8 +640,19 @@ PAGO: Si piden contenido VIP, suscripción, precios o cómo pagar, responde natu
     }
 
     return new Response("ok", { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Webhook error:", error);
+    // Try to log the top-level error
+    try {
+      // We may not have creatorId in a top-level catch, log generically
+      await supabase.from("bot_errors").insert({
+        creator_id: "00000000-0000-0000-0000-000000000000",
+        error_type: "webhook_crash",
+        error_message: error.message || String(error),
+        severity: "critical",
+        error_context: { stack: error.stack?.slice(0, 500) },
+      });
+    } catch { /* can't log, just return */ }
     return new Response("ok", { status: 200 });
   }
 });
