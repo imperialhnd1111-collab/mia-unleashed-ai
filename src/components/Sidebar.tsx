@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Users, Image, Megaphone, BarChart3,
   Bot, Settings, LogOut, ChevronLeft, ChevronRight, Sparkles, Radio, Menu, X,
-  CreditCard, Brain, CalendarDays
+  CreditCard, Brain, CalendarDays, Shield
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -22,6 +22,7 @@ const navItems = [
   { to: "/calendar", icon: CalendarDays, label: "Calendario" },
   { to: "/agent", icon: Brain, label: "Agente IA" },
   { to: "/bot", icon: Bot, label: "Bot AI" },
+  { to: "/monitoring", icon: Shield, label: "Monitoreo" },
   { to: "/settings", icon: Settings, label: "Ajustes" },
 ];
 

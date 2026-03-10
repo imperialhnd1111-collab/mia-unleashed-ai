@@ -146,6 +146,60 @@ export type Database = {
           },
         ]
       }
+      bot_errors: {
+        Row: {
+          created_at: string
+          creator_id: string
+          error_context: Json | null
+          error_message: string
+          error_type: string
+          fan_id: string | null
+          id: string
+          resolved: boolean
+          resolved_at: string | null
+          severity: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          error_context?: Json | null
+          error_message: string
+          error_type: string
+          fan_id?: string | null
+          id?: string
+          resolved?: boolean
+          resolved_at?: string | null
+          severity?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          error_context?: Json | null
+          error_message?: string
+          error_type?: string
+          fan_id?: string | null
+          id?: string
+          resolved?: boolean
+          resolved_at?: string | null
+          severity?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_errors_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bot_errors_fan_id_fkey"
+            columns: ["fan_id"]
+            isOneToOne: false
+            referencedRelation: "fans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           created_at: string | null

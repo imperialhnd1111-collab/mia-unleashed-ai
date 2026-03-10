@@ -25,6 +25,7 @@ import PaymentsPage from "./pages/PaymentsPage";
 import PlatformAgentPage from "./pages/PlatformAgentPage";
 import CalendarPage from "./pages/CalendarPage";
 import InstallPrompt from "./components/InstallPrompt";
+import MonitoringPage from "./pages/MonitoringPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -135,6 +136,7 @@ const App = () => {
             <Route path="/calendar" element={<ProtectedRoute session={session}><CalendarPage /></ProtectedRoute>} />
             <Route path="/agent" element={<ProtectedRoute session={session}><PlatformAgentPage /></ProtectedRoute>} />
             <Route path="/bot" element={<ProtectedRoute session={session}><BotPage /></ProtectedRoute>} />
+            <Route path="/monitoring" element={<ProtectedRoute session={session}><MonitoringPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute session={session}><DashboardPage /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
