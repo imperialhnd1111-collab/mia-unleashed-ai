@@ -1,35 +1,49 @@
-import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart2, TrendingUp, Users, MessageSquare, DollarSign, Clock, Brain, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import { useState } from "react";
+import { PageHeader, StatCard } from "@/components/shared";
+import { useSupabaseQuery } from "@/hooks/use-supabase-query";
+
+interface AnalyticsData {
+  fans: number;
+  conversations: number;
+  messages: number;
+  events: Array<{ id: string; event_type: string; created_at: string; revenue: number }>;
+  topFans: Array<{ first_name: string | null; telegram_username: string | null; total_spent: number; relationship_level: number }>;
+}
+
+interface Creator {
+  id: string;
+  name: string;
+}
 
 export default function AnalyticsPage() {
-  const [data, setData] = useState({ fans: 0, conversations: 0, messages: 0, events: [] as any[], topFans: [] as any[] });
-  const [loading, setLoading] = useState(true);
-  const [creators, setCreators] = useState<any[]>([]);
-  const [selectedCreator, setSelectedCreator] = useState<string>("all");
-  const [aiAnalysis, setAiAnalysis] = useState<string>("");
+  const [selectedCreator, setSelectedCreator] = useState("all");
+  const [aiAnalysis, setAiAnalysis] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      const [{ count: fans }, { count: conv }, { count: msgs }, { data: events }, { data: topFans }, { data: creatorsData }] = await Promise.all([
+  const { data, loading } = useSupabaseQuery<AnalyticsData>(
+    { fans: 0, conversations: 0, messages: 0, events: [], topFans: [] },
+    async () => {
+      const [{ count: fans }, { count: conv }, { count: msgs }, { data: events }, { data: topFans }] = await Promise.all([
         supabase.from("fans").select("*", { count: "exact", head: true }),
         supabase.from("conversations").select("*", { count: "exact", head: true }),
         supabase.from("messages").select("*", { count: "exact", head: true }),
         supabase.from("analytics_events").select("*").order("created_at", { ascending: false }).limit(20),
         supabase.from("fans").select("first_name, telegram_username, total_spent, relationship_level").order("total_spent", { ascending: false }).limit(5),
-        supabase.from("creators").select("id, name").order("created_at"),
       ]);
-      setData({ fans: fans || 0, conversations: conv || 0, messages: msgs || 0, events: events || [], topFans: topFans || [] });
-      setCreators(creatorsData || []);
-      setLoading(false);
-    };
-    load();
-  }, []);
+      return { fans: fans || 0, conversations: conv || 0, messages: msgs || 0, events: events || [], topFans: topFans || [] };
+    }
+  );
+
+  const { data: creators } = useSupabaseQuery<Creator[]>([], async () => {
+    const { data } = await supabase.from("creators").select("id, name").order("created_at");
+    return (data || []) as Creator[];
+  });
 
   const runAiAnalysis = async () => {
     setAiLoading(true);
@@ -56,21 +70,11 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-display font-bold text-foreground">Analytics</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Métricas de engagement y comportamiento</p>
-      </div>
+      <PageHeader title="Analytics" description="Métricas de engagement y comportamiento" />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {metrics.map(m => (
-          <div key={m.label} className="glass rounded-2xl p-4 slide-in">
-            <div className="flex items-center justify-between mb-2">
-              <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center"><m.icon className="w-4 h-4 text-white" /></div>
-              <TrendingUp className="w-4 h-4 text-emerald" />
-            </div>
-            <p className="text-xl font-bold text-foreground">{loading ? "..." : m.value}</p>
-            <p className="text-xs text-muted-foreground">{m.label}</p>
-          </div>
+          <StatCard key={m.label} icon={m.icon} label={m.label} value={loading ? "..." : m.value} />
         ))}
       </div>
 
