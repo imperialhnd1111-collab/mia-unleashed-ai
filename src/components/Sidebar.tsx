@@ -54,12 +54,12 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
     >
       <div className={cn("flex items-center gap-3 px-4 py-5 border-b border-border", !isMobile && collapsed && "justify-center px-2")}>
         <div className="relative flex-shrink-0">
-          <img src={miaAvatar} alt="Creator AI" className="w-8 h-8 rounded-full object-cover border border-primary" />
+          <img src={miaAvatar} alt="Nobi" className="w-8 h-8 rounded-full object-cover border border-primary" />
           <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full status-active border border-sidebar" />
         </div>
         {(isMobile || !collapsed) && (
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-foreground truncate">Creator AI</p>
+            <p className="text-sm font-semibold text-foreground truncate">Nobi</p>
             <p className="text-xs text-muted-foreground">Panel Admin</p>
           </div>
         )}

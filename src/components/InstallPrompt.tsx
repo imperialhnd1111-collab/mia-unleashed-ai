@@ -46,12 +46,12 @@ export default function InstallPrompt() {
         {/* Logo */}
         <div className="slide-in">
           <div className="relative inline-block mb-4">
-            <img src={miaAvatar} alt="Creator AI" className="w-24 h-24 rounded-3xl object-cover border-2 border-primary glow-rose mx-auto shadow-lg" />
+            <img src={miaAvatar} alt="Nobi" className="w-24 h-24 rounded-3xl object-cover border-2 border-primary glow-rose mx-auto shadow-lg" />
             <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full gradient-primary flex items-center justify-center shadow-lg">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
           </div>
-          <h1 className="text-3xl font-display font-bold text-gradient mb-1">Creator AI</h1>
+          <h1 className="text-3xl font-display font-bold text-gradient mb-1">Nobi</h1>
           <p className="text-muted-foreground text-sm">Panel de Administración</p>
         </div>
 

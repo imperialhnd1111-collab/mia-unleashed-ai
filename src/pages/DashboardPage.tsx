@@ -45,7 +45,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <PageHeader title="Dashboard" description="Visión general de tu plataforma Creator AI" />
+        <PageHeader title="Dashboard" description="Visión general de tu plataforma Nobi" />
         <div className="flex items-center gap-2 glass px-4 py-2 rounded-full">
           <span className="w-2 h-2 rounded-full status-active pulse-rose" />
           <span className="text-sm text-foreground">Sistema activo</span>
@@ -72,7 +72,7 @@ export default function DashboardPage() {
               <span className="absolute -bottom-1 -right-1 text-lg">✨</span>
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">Crea tu primera creadora</h3>
-            <p className="text-muted-foreground text-sm mb-4">Dale vida a Mia Battu y más modelos AI en tu plataforma</p>
+            <p className="text-muted-foreground text-sm mb-4">Dale vida a tus creadoras IA y comienza a monetizar en tu plataforma</p>
             <a href="/creators" className="inline-flex items-center gap-2 gradient-primary text-white px-6 py-2.5 rounded-lg text-sm font-medium glow-rose hover:opacity-90 transition-opacity">
               <Zap className="w-4 h-4" /> Crear creadora
             </a>

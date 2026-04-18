@@ -26,8 +26,8 @@ export default function LandingPage() {
       <nav className="fixed top-0 w-full z-50 glass border-b border-border/40 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-3">
           <div className="flex items-center gap-2">
-            <img src={miaAvatar} alt="Creator AI" className="w-8 h-8 rounded-full object-cover border border-primary/50" />
-            <span className="font-display font-bold text-lg text-gradient">Creator AI</span>
+            <img src={miaAvatar} alt="Nobi" className="w-8 h-8 rounded-full object-cover border border-primary/50" />
+            <span className="font-display font-bold text-lg text-gradient">Nobi</span>
           </div>
           <div className="flex gap-3">
             <Button variant="ghost" size="sm" onClick={() => navigate("/auth")} className="text-muted-foreground hover:text-foreground">
@@ -105,7 +105,7 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="border-t border-border/40 py-8 px-6 text-center text-sm text-muted-foreground">
-        © {new Date().getFullYear()} Creator AI · Potenciado con IA
+        © {new Date().getFullYear()} Nobi · Potenciado con IA
       </footer>
     </div>
   );

@@ -1,7 +1,7 @@
 {
-  "name": "Creator AI - Panel de Administración",
-  "short_name": "Creator AI",
-  "description": "Panel de gestión inteligente para creadoras de contenido",
+  "name": "Nobi - Panel de Administración",
+  "short_name": "Nobi",
+  "description": "Panel de gestión inteligente para creadoras IA",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d1017",
