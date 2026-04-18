@@ -557,10 +557,13 @@ export type Database = {
       }
       fans: {
         Row: {
+          chat_premium: boolean
+          chat_premium_expires_at: string | null
           created_at: string | null
           creator_id: string
           detected_style: Json | null
           first_name: string | null
+          free_messages_used: number
           id: string
           is_subscriber: boolean | null
           language_code: string | null
@@ -575,10 +578,13 @@ export type Database = {
           total_spent: number | null
         }
         Insert: {
+          chat_premium?: boolean
+          chat_premium_expires_at?: string | null
           created_at?: string | null
           creator_id: string
           detected_style?: Json | null
           first_name?: string | null
+          free_messages_used?: number
           id?: string
           is_subscriber?: boolean | null
           language_code?: string | null
@@ -593,10 +599,13 @@ export type Database = {
           total_spent?: number | null
         }
         Update: {
+          chat_premium?: boolean
+          chat_premium_expires_at?: string | null
           created_at?: string | null
           creator_id?: string
           detected_style?: Json | null
           first_name?: string | null
+          free_messages_used?: number
           id?: string
           is_subscriber?: boolean | null
           language_code?: string | null

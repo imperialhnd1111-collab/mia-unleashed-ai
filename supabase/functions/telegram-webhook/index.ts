@@ -349,6 +349,23 @@ serve(async (req) => {
             { inline_keyboard: buttons }
           );
         }
+        // ===== BUY CHAT PASS (Telegram Stars — paywall tras 10 msgs gratis) =====
+        else if (cbData === "buy_chatpass") {
+          const usdAmount = 25;
+          const stars = convertUSD(usdAmount, "XTR"); // 1250 ⭐
+          await fetch(`https://api.telegram.org/bot${creatorBotToken}/sendInvoice`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chatId,
+              title: `💎 Membresía Premium con ${creator.name}`,
+              description: `Acceso ilimitado al chat con ${creator.name} por 30 días. Conversa sin límites.`,
+              payload: `chatpass_${userId}_${Date.now()}`,
+              provider_token: "",
+              currency: "XTR",
+              prices: [{ label: `💬 Membresía Premium 30 días`, amount: stars }],
+            }),
+          });
+        }
       } catch (e: any) {
         console.error("Callback error:", e);
         await logBotError(creator.id, "callback_error", e.message || String(e), "error", { callback_data: cbData, chat_id: chatId });
@@ -371,7 +388,23 @@ serve(async (req) => {
       const userId = String(update.message.from?.id);
       const payload = payment.invoice_payload || "";
 
-      if (payload.startsWith("sub_")) {
+      // Membresía premium del chat (paywall tras 10 mensajes gratis) — 30 días
+      if (payload.startsWith("chatpass_")) {
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+        await supabase.from("fans").update({
+          chat_premium: true,
+          chat_premium_expires_at: expiresAt.toISOString(),
+          total_spent: 25,
+        }).eq("telegram_user_id", userId).eq("creator_id", creator.id);
+
+        await sendTelegramMessage(creatorBotToken, update.message.chat.id,
+          `🎉 <b>¡Membresía Premium activada!</b>\n\n` +
+          `💬 Ya puedes seguir hablando con ${creator.name} sin límites.\n` +
+          `📅 Válida hasta: ${expiresAt.toLocaleDateString("es-CO")}\n\n` +
+          `¡Escríbele lo que quieras! 💕`
+        );
+      } else if (payload.startsWith("sub_")) {
         const planIdMatch = payload.match(/^sub_([a-f0-9-]+)_/);
         if (planIdMatch) {
           const planId = planIdMatch[1];
@@ -473,6 +506,52 @@ serve(async (req) => {
     if (convError || !conversation) {
       await logBotError(creator.id, "conversation_upsert_failed", convError?.message || "Conversation upsert returned null", "critical", { fanId: fan.id }, fan.id);
       return new Response("ok", { status: 200 });
+    }
+
+    // ===== PAYWALL: 10 mensajes gratis, después membresía premium =====
+    const FREE_LIMIT = 10;
+    const now = new Date();
+    const premiumActive = fan.chat_premium === true &&
+      (!fan.chat_premium_expires_at || new Date(fan.chat_premium_expires_at) > now);
+    const isCommand = userText.startsWith("/");
+
+    if (!premiumActive && !isCommand) {
+      const used = fan.free_messages_used || 0;
+      if (used >= FREE_LIMIT) {
+        // Bloquear: mostrar paywall y NO llamar a la IA
+        await sendTelegramMessage(creatorBotToken, chatId,
+          `✨🔒 <b>Has alcanzado el límite de mensajes gratis</b>\n\n` +
+          `Hola ${firstName}, ${creator.name} ha disfrutado mucho conversando contigo 💕\n\n` +
+          `Para seguir hablando sin límites, activa tu <b>Membresía Premium</b>:\n` +
+          `💎 <b>$25 USD</b> = <b>1250 ⭐ Telegram Stars</b>\n` +
+          `📅 Acceso ilimitado al chat por 30 días\n\n` +
+          `Pulsa el botón para pagar con Telegram Stars 👇`,
+          { inline_keyboard: [
+            [{ text: "⭐ Activar Premium · 1250 Stars", callback_data: "buy_chatpass" }],
+          ]}
+        );
+        // Guardar el mensaje del usuario para historial pero no responder
+        await supabase.from("messages").insert({
+          conversation_id: conversation.id,
+          role: "user",
+          content: userText,
+          telegram_message_id: telegramMessageId,
+          sent_at: new Date().toISOString(),
+        });
+        return new Response("ok", { status: 200 });
+      }
+
+      // Incrementar contador de mensajes gratis usados
+      const newUsed = used + 1;
+      await supabase.from("fans").update({ free_messages_used: newUsed }).eq("id", fan.id);
+
+      // Aviso suave cuando se acerca el límite (mensajes 8 y 9)
+      if (newUsed === FREE_LIMIT - 2 || newUsed === FREE_LIMIT - 1) {
+        const remaining = FREE_LIMIT - newUsed;
+        await sendTelegramMessage(creatorBotToken, chatId,
+          `💌 <i>Te quedan <b>${remaining}</b> mensaje${remaining === 1 ? "" : "s"} gratis con ${creator.name}.</i>`
+        );
+      }
     }
 
     // Save user message
