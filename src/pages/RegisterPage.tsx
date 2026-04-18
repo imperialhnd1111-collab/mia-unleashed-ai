@@ -37,12 +37,12 @@ export default function RegisterPage() {
 
         <div className="text-center mb-8 slide-in">
           <div className="relative inline-block mb-4">
-            <img src={miaAvatar} alt="Creator AI" className="w-16 h-16 rounded-full object-cover border-2 border-primary glow-rose mx-auto" />
+            <img src={miaAvatar} alt="Nobi" className="w-16 h-16 rounded-full object-cover border-2 border-primary glow-rose mx-auto" />
             <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full gradient-primary flex items-center justify-center">
               <Sparkles className="w-2.5 h-2.5 text-white" />
             </div>
           </div>
-          <h1 className="text-2xl font-display font-bold text-gradient mb-1">Únete a Creator AI</h1>
+          <h1 className="text-2xl font-display font-bold text-gradient mb-1">Únete a Nobi</h1>
           <p className="text-muted-foreground text-sm">Crea tu clon de IA y comienza a monetizar</p>
         </div>
 

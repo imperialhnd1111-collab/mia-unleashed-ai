@@ -44,7 +44,7 @@ export default function AuthPage() {
               <Sparkles className="w-3 h-3 text-white" />
             </div>
           </div>
-          <h1 className="text-3xl font-display font-bold text-gradient mb-1">Creator AI</h1>
+          <h1 className="text-3xl font-display font-bold text-gradient mb-1">Nobi</h1>
           <p className="text-muted-foreground text-sm">Panel de Administración</p>
         </div>
 

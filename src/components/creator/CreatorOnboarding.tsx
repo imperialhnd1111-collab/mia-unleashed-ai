@@ -165,7 +165,7 @@ export default function CreatorOnboarding({ session, onCreated, onLogout }: Prop
   return (
     <div className="min-h-screen bg-background text-foreground">
       <nav className="border-b border-border/40 px-6 py-3 flex items-center justify-between">
-        <span className="font-display font-bold text-gradient">Creator AI</span>
+        <span className="font-display font-bold text-gradient">Nobi</span>
         <Button variant="ghost" size="sm" onClick={onLogout}><LogOut className="w-4 h-4 mr-1" /> Salir</Button>
       </nav>
 

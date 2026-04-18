@@ -16,7 +16,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               {isMobile && <MobileMenuButton onClick={() => setMobileOpen(true)} />}
-              {isMobile && <h2 className="text-lg font-display font-bold text-foreground">Creator AI</h2>}
+              {isMobile && <h2 className="text-lg font-display font-bold text-foreground">Nobi</h2>}
             </div>
             <NotificationCenter />
           </div>
