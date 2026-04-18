@@ -371,7 +371,23 @@ serve(async (req) => {
       const userId = String(update.message.from?.id);
       const payload = payment.invoice_payload || "";
 
-      if (payload.startsWith("sub_")) {
+      // Membresía premium del chat (paywall tras 10 mensajes gratis) — 30 días
+      if (payload.startsWith("chatpass_")) {
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+        await supabase.from("fans").update({
+          chat_premium: true,
+          chat_premium_expires_at: expiresAt.toISOString(),
+          total_spent: 25,
+        }).eq("telegram_user_id", userId).eq("creator_id", creator.id);
+
+        await sendTelegramMessage(creatorBotToken, update.message.chat.id,
+          `🎉 <b>¡Membresía Premium activada!</b>\n\n` +
+          `💬 Ya puedes seguir hablando con ${creator.name} sin límites.\n` +
+          `📅 Válida hasta: ${expiresAt.toLocaleDateString("es-CO")}\n\n` +
+          `¡Escríbele lo que quieras! 💕`
+        );
+      } else if (payload.startsWith("sub_")) {
         const planIdMatch = payload.match(/^sub_([a-f0-9-]+)_/);
         if (planIdMatch) {
           const planId = planIdMatch[1];
