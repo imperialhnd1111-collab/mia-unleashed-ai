@@ -349,6 +349,23 @@ serve(async (req) => {
             { inline_keyboard: buttons }
           );
         }
+        // ===== BUY CHAT PASS (Telegram Stars — paywall tras 10 msgs gratis) =====
+        else if (cbData === "buy_chatpass") {
+          const usdAmount = 25;
+          const stars = convertUSD(usdAmount, "XTR"); // 1250 ⭐
+          await fetch(`https://api.telegram.org/bot${creatorBotToken}/sendInvoice`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chatId,
+              title: `💎 Membresía Premium con ${creator.name}`,
+              description: `Acceso ilimitado al chat con ${creator.name} por 30 días. Conversa sin límites.`,
+              payload: `chatpass_${userId}_${Date.now()}`,
+              provider_token: "",
+              currency: "XTR",
+              prices: [{ label: `💬 Membresía Premium 30 días`, amount: stars }],
+            }),
+          });
+        }
       } catch (e: any) {
         console.error("Callback error:", e);
         await logBotError(creator.id, "callback_error", e.message || String(e), "error", { callback_data: cbData, chat_id: chatId });
