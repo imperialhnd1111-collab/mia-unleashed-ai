@@ -508,6 +508,52 @@ serve(async (req) => {
       return new Response("ok", { status: 200 });
     }
 
+    // ===== PAYWALL: 10 mensajes gratis, después membresía premium =====
+    const FREE_LIMIT = 10;
+    const now = new Date();
+    const premiumActive = fan.chat_premium === true &&
+      (!fan.chat_premium_expires_at || new Date(fan.chat_premium_expires_at) > now);
+    const isCommand = userText.startsWith("/");
+
+    if (!premiumActive && !isCommand) {
+      const used = fan.free_messages_used || 0;
+      if (used >= FREE_LIMIT) {
+        // Bloquear: mostrar paywall y NO llamar a la IA
+        await sendTelegramMessage(creatorBotToken, chatId,
+          `✨🔒 <b>Has alcanzado el límite de mensajes gratis</b>\n\n` +
+          `Hola ${firstName}, ${creator.name} ha disfrutado mucho conversando contigo 💕\n\n` +
+          `Para seguir hablando sin límites, activa tu <b>Membresía Premium</b>:\n` +
+          `💎 <b>$25 USD</b> = <b>1250 ⭐ Telegram Stars</b>\n` +
+          `📅 Acceso ilimitado al chat por 30 días\n\n` +
+          `Pulsa el botón para pagar con Telegram Stars 👇`,
+          { inline_keyboard: [
+            [{ text: "⭐ Activar Premium · 1250 Stars", callback_data: "buy_chatpass" }],
+          ]}
+        );
+        // Guardar el mensaje del usuario para historial pero no responder
+        await supabase.from("messages").insert({
+          conversation_id: conversation.id,
+          role: "user",
+          content: userText,
+          telegram_message_id: telegramMessageId,
+          sent_at: new Date().toISOString(),
+        });
+        return new Response("ok", { status: 200 });
+      }
+
+      // Incrementar contador de mensajes gratis usados
+      const newUsed = used + 1;
+      await supabase.from("fans").update({ free_messages_used: newUsed }).eq("id", fan.id);
+
+      // Aviso suave cuando se acerca el límite (mensajes 8 y 9)
+      if (newUsed === FREE_LIMIT - 2 || newUsed === FREE_LIMIT - 1) {
+        const remaining = FREE_LIMIT - newUsed;
+        await sendTelegramMessage(creatorBotToken, chatId,
+          `💌 <i>Te quedan <b>${remaining}</b> mensaje${remaining === 1 ? "" : "s"} gratis con ${creator.name}.</i>`
+        );
+      }
+    }
+
     // Save user message
     const { error: msgError } = await supabase.from("messages").insert({
       conversation_id: conversation.id,
